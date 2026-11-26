@@ -83,6 +83,117 @@ export function detectedToChatLanguage(raw: unknown): ChatLanguage | null {
 }
 
 /**
+ * 261122: best-effort detection of the conversation language from a chunk of
+ * typed text. Never throws; returns null when the language cannot be
+ * determined. Non-Latin scripts are detected by character range; Latin-script
+ * text is scored by word frequency per language.
+ *
+ * 261124: the first cut scored a handful of function words only, which missed
+ * exactly what players type at a companion: "hi", "let's play connect 4",
+ * "gg". The lexicon below is the everyday vocabulary (greetings, pronouns,
+ * auxiliaries, game words), and a word claimed by more than one language
+ * (la, a, no, ok, son) is ignored so it can never create a false tie.
+ */
+const LATIN_LEXICON: Record<'en' | 'it' | 'fr' | 'es' | 'pt', string[]> = {
+  en: [
+    'the', 'and', 'that', 'this', 'these', 'those', 'of', 'to', 'in', 'is', 'are', 'was', 'were',
+    'be', 'been', 'with', 'for', 'not', 'you', 'your', 'yours', 'i', 'my', 'mine', 'he', 'his',
+    'she', 'her', 'we', 'our', 'they', 'their', 'what', 'how', 'why', 'when', 'where', 'who',
+    'because', 'can', 'could', 'would', 'should', 'will', 'want', 'need', 'please', 'thanks',
+    'thank', 'hello', 'hi', 'hey', 'bye', 'goodbye', 'yes', 'okay', 'good', 'great', 'nice',
+    'let\'s', 'don\'t', 'can\'t', 'i\'m', 'it\'s', 'that\'s', 'what\'s', 'isn\'t', 'won\'t',
+    'gonna', 'wanna', 'lol', 'yeah', 'yep', 'nope', 'play', 'game', 'games', 'help', 'sorry',
+    'love', 'like', 'talk', 'chat', 'stop', 'start', 'wait', 'come', 'now', 'today', 'tomorrow',
+    'yesterday', 'always', 'never', 'more', 'less', 'very', 'really', 'just', 'also', 'still',
+    'again', 'here', 'there', 'one', 'two', 'three', 'about', 'know', 'think', 'see', 'look',
+  ],
+  it: [
+    'che', 'è', 'il', 'lo', 'gli', 'una', 'di', 'con', 'per', 'non', 'mi', 'ti', 'si', 'le',
+    'hai', 'ho', 'ha', 'siamo', 'siete', 'sono', 'voi', 'loro', 'cosa', 'come', 'dove', 'quando',
+    'perché', 'però', 'anche', 'ma', 'più', 'meno', 'molto', 'poco', 'sempre', 'mai', 'oggi',
+    'domani', 'ieri', 'già', 'ancora', 'qui', 'qua', 'lì', 'là', 'ciao', 'grazie', 'bene', 'male',
+    'dai', 'allora', 'quindi', 'adesso', 'dopo', 'prima', 'voglio', 'vuoi', 'posso', 'puoi',
+    'devo', 'devi', 'sei', 'sto', 'stai', 'sta', 'stiamo', 'questo', 'questa', 'quello', 'quella',
+    'sì', 'va', 'beh', 'boh', 'cioè', 'basta', 'andiamo', 'giochiamo', 'partita', 'navi', 'nave',
+    'mossa', 'mosse', 'vinci', 'vinto', 'perso', 'perdo', 'gioco', 'giocare', 'amico', 'amica',
+  ],
+  fr: [
+    'le', 'les', 'des', 'une', 'et', 'de', 'avec', 'pour', 'pas', 'je', 'tu', 'elle', 'nous',
+    'vous', 'ils', 'elles', 'est', 'sont', 'bonjour', 'salut', 'merci', 'oui', 'très', 'bien',
+    'aussi', 'mais', 'plus', 'moins', 'toujours', 'jamais', 'aujourd\'hui', 'demain', 'hier',
+    'ici', 'quoi', 'comment', 'pourquoi', 'quand', 'où', 'qui', 'parce', 'veux', 'peut', 'dois',
+    'suis', 'sommes', 'êtes', 'ceci', 'cela', 'jouer', 'jouons', 'partie', 'merci', 'encore',
+    'déjà', 'alors', 'donc', 'après', 'avant', 'mon', 'ton', 'notre', 'votre', 'leur', 'mes',
+  ],
+  es: [
+    'el', 'los', 'las', 'una', 'que', 'y', 'para', 'yo', 'tú', 'él', 'ella', 'nosotros',
+    'vosotros', 'ellos', 'hola', 'gracias', 'sí', 'muy', 'también', 'pero', 'más', 'menos',
+    'siempre', 'nunca', 'hoy', 'mañana', 'ayer', 'aquí', 'ahí', 'allá', 'qué', 'cómo', 'por qué',
+    'cuándo', 'dónde', 'quién', 'porque', 'quiero', 'puedes', 'puedo', 'debo', 'eres', 'somos',
+    'sois', 'juego', 'jugar', 'jugamos', 'partida', 'amigo', 'amiga', 'bien', 'mal', 'esta',
+    'este', 'esto', 'eso', 'esa', 'vale', 'bueno', 'buena', 'mucho', 'poco', 'vamos', 'tengo',
+  ],
+  pt: [
+    'os', 'as', 'uma', 'em', 'não', 'eu', 'vocês', 'eles', 'elas', 'é', 'são', 'olá', 'obrigado',
+    'obrigada', 'sim', 'muito', 'também', 'mas', 'mais', 'menos', 'sempre', 'nunca', 'hoje',
+    'amanhã', 'ontem', 'aqui', 'aí', 'ali', 'quê', 'quando', 'onde', 'quem', 'porque', 'quero',
+    'pode', 'posso', 'devo', 'somos', 'jogo', 'jogar', 'jogamos', 'amigo', 'amiga', 'bem',
+    'muito', 'pouco', 'vamos', 'tenho', 'está', 'estou', 'isso', 'isto', 'esse', 'essa', 'legal',
+  ],
+};
+
+/** word → the languages that claim it; only single-language words score. */
+const UNIQUE_WORDS: Map<string, 'en' | 'it' | 'fr' | 'es' | 'pt'> = (() => {
+  const owners = new Map<string, Set<string>>();
+  for (const [lang, words] of Object.entries(LATIN_LEXICON)) {
+    for (const w of words) {
+      const set = owners.get(w) ?? new Set<string>();
+      set.add(lang);
+      owners.set(w, set);
+    }
+  }
+  const unique = new Map<string, 'en' | 'it' | 'fr' | 'es' | 'pt'>();
+  for (const [word, langs] of owners) {
+    if (langs.size === 1) unique.set(word, [...langs][0] as 'en' | 'it' | 'fr' | 'es' | 'pt');
+  }
+  return unique;
+})();
+
+export function detectLanguageFromText(text: string): ChatLanguage | null {
+  const normalized = text.trim();
+  if (normalized.length < 2) return null;
+
+  // Script-based detection (non-Latin scripts are unambiguous enough). Kana is
+  // checked BEFORE Han: Japanese sentences mix kanji in, so a han check first
+  // would read every Japanese message as Chinese.
+  const hangul = /[\uac00-\ud7af]/.test(normalized);
+  if (hangul) return 'ko';
+  const kana = /[\u3040-\u30ff]/.test(normalized);
+  if (kana) return 'ja';
+  const han = /[\u4e00-\u9fff]/.test(normalized);
+  if (han) return 'zh';
+  const cyrillic = /[\u0400-\u04ff]/.test(normalized);
+  if (cyrillic) return 'ru';
+
+  const counts: Record<'en' | 'it' | 'fr' | 'es' | 'pt', number> = { en: 0, it: 0, fr: 0, es: 0, pt: 0 };
+  const words = normalized.toLowerCase().replace(/[\u2019]/g, "'").split(/\s+/);
+  for (const word of words) {
+    // Keep letters, digits and the inner apostrophe of contractions.
+    const clean = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, '');
+    const lang = UNIQUE_WORDS.get(clean);
+    if (lang) counts[lang]++;
+  }
+
+  const ranked = (Object.entries(counts) as Array<['en' | 'it' | 'fr' | 'es' | 'pt', number]>)
+    .sort((a, b) => b[1] - a[1]);
+  const [bestLang, bestCount] = ranked[0];
+  const runnerUp = ranked[1]?.[1] ?? 0;
+  // No signal, or as many hits in two languages: keep the current language.
+  if (bestCount === 0 || bestCount === runnerUp) return null;
+  return bestLang;
+}
+
+/**
  * 260730: per-CHARACTER language, stamped into `character.metadata.language`
  * at creation from the app's UI language ('zh' UI → 'zh' characters). When
  * set, it PINS every AI surface for that character (persona generation, chat,

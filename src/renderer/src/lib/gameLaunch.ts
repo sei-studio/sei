@@ -27,6 +27,8 @@
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
+import { useConnect4Store } from './stores/useConnect4Store';
+import { useBattleshipStore } from './stores/useBattleshipStore';
 import { useDrawStore } from './stores/useDrawStore';
 import { useBackseatStore } from './stores/useBackseatStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
@@ -39,7 +41,7 @@ import type { GameId } from '@shared/gameIpc';
 
 /** The launchable games (the picker's coming-soon tiles are never active).
  *  Game adapters (M0, 260908): + the two bot-backed games. */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'CONNECT4' | 'BATTLESHIP';
 
 /** The bot-backed ("summon") games: one utilityProcess bot per character. */
 export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve'];
@@ -76,6 +78,10 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: t('Draw!') };
   }
+  const connect4 = useConnect4Store.getState().games[characterId];
+  if (connect4 && connect4.status !== 'ended') return { id: 'CONNECT4', name: t('Forza 4') };
+  const bn = useBattleshipStore.getState().games[characterId];
+  if (bn && bn.status !== 'ended') return { id: 'BATTLESHIP', name: t('Battleship') };
   // A screen share is not launched from the picker any more (260803: it is a
   // call control), but it still counts as active here, because the gate's real
   // job is the one exclusion that is physical: a companion cannot be watching
@@ -104,6 +110,14 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
   }
   if (id === 'draw') {
     await useDrawStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'CONNECT4') {
+    await useConnect4Store.getState().end(characterId);
+    return;
+  }
+  if (id === 'BATTLESHIP') {
+    await useBattleshipStore.getState().end(characterId);
     return;
   }
   if (id === 'backseat') {
@@ -171,6 +185,8 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
 
   useUiStore.getState().navigate({ kind: 'chat', characterId });
   const chess = useChessStore.getState();
+  const connect4 = useConnect4Store.getState();
+  const bn = useBattleshipStore.getState();
   const dash = useMcDashboardStore.getState();
 
   if (gameId !== 'chess') {
@@ -183,6 +199,10 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
 
   if (gameId === 'chess') {
     chess.openPanel(characterId);
+  } else if (gameId === 'CONNECT4') {
+    connect4.openPanel(characterId);
+  } else if (gameId === 'BATTLESHIP') {
+    bn.openPanel(characterId);
   } else if (isBotGame(gameId)) {
     if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
       // A bot-backed game with a live bot needs no flag: the dashboard is

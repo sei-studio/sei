@@ -35,10 +35,14 @@ import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
+import { useConnect4Store, isCONNECT4Open } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore, isBATTLESHIPOpen } from '../lib/stores/useBattleshipStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useBackseatStore, backseatCapture } from '../lib/stores/useBackseatStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
+import { CONNECT4Panel } from '../components/connect4/Connect4Panel';
+import { BattleshipPanel } from '../components/battleship/BattleshipPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { getGameSurface } from '../lib/gameSurfaces';
 import { botGameName } from '../lib/gameLaunch';
@@ -468,6 +472,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // game at a time; chess wins a tie.
   const chessOpen = useChessStore((s) => isChessOpen(s, characterId));
   const chessGame = useChessStore((s) => s.games[characterId] ?? null);
+  const connect4Open = useConnect4Store((s) => isCONNECT4Open(s, characterId));
+  const connect4Game = useConnect4Store((s) => s.games[characterId] ?? null);
+  const BATTLESHIPOpen = useBattleshipStore((s) => isBATTLESHIPOpen(s, characterId));
+  const BATTLESHIPGame = useBattleshipStore((s) => s.games[characterId] ?? null);
   // Chess replay (260724): a clicked "You and X played chess" transcript row
   // opens the recorded game in this same slot. Purely local view state; it
   // covers (and never disturbs) any live surface below it in the priority.
@@ -495,7 +503,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const surfaceGame = mcOnline ? (summon?.game ?? 'minecraft') : (launchGame ?? 'minecraft');
   const gameSurface = getGameSurface(surfaceGame);
   const gameSurfaceName = botGameName(surfaceGame);
-  const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
+  const gameOpen = chessReplayOpen || chessOpen || connect4Open || BATTLESHIPOpen || mcDashOpen || mcLaunchOpen;
 
   // Unified end control (260721): every surface ends from GameSurface's
   // bottom-right "x", through its existing end path. `confirmGameEnd` gates
@@ -512,6 +520,16 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       void useChessStore.getState().end(characterId);
       return;
     }
+    if (connect4Open) {
+      // Ends any game in main (an unfinished one is recorded as abandoned).
+      void useConnect4Store.getState().end(characterId);
+      return;
+    }
+    if (BATTLESHIPOpen) {
+      // Ends any game in main (an unfinished one is recorded as abandoned).
+      void useBattleshipStore.getState().end(characterId);
+      return;
+    }
     if (mcDashOpen || summon?.kind === 'connecting') {
       // Same instant-disconnect path as the presence panel button; the
       // !mcOnline effect above clears the dashboard state afterwards.
@@ -524,9 +542,13 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     ? false
     : chessOpen
     ? chessGame?.status === 'active'
-    : mcDashOpen
-      ? true
-      : summon?.kind === 'connecting';
+    : connect4Open
+      ? connect4Game?.status === 'active'
+      : BATTLESHIPOpen
+        ? BATTLESHIPGame?.status === 'active'
+        : mcDashOpen
+        ? true
+        : summon?.kind === 'connecting';
 
   // Expand-over-chat (260721): the GameSurface bottom-left "V" grows the game
   // area to the full content height, hiding the chat below it.
@@ -700,6 +722,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   <ChessReplayPanel characterId={characterId} />
                 ) : chessOpen ? (
                   <ChessPanel characterId={characterId} />
+                ) : connect4Open ? (
+                  <CONNECT4Panel characterId={characterId} />
+                ) : BATTLESHIPOpen ? (
+                  <BattleshipPanel characterId={characterId} />
                 ) : mcDashOpen ? (
                   <gameSurface.DashboardPanel characterId={characterId} />
                 ) : (

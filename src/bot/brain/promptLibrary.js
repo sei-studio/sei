@@ -1649,6 +1649,20 @@ export const CHAT_LANGUAGE_NAMES = {
   it: 'Italian',
 }
 
+// 261124: the per-turn language reminder. renderLanguageDirective sits in the
+// cached system prefix, far from the player's last message, and models answered
+// in the language of the transcript anyway ("hi" got an Italian reply). This
+// note rides AFTER the cache breakpoint (appendUncachedTail), so the language
+// rule is the last thing in the prompt on the turn where it matters. `language`
+// is the detected language of the player's last message, or null when the
+// text carries no signal (then only the rule is stated, not a language name).
+export function renderReplyLanguageNote(language) {
+  const name = CHAT_LANGUAGE_NAMES[language]
+  return name
+    ? `[language] The player's last message is in ${name}. Write your reply in ${name}.`
+    : `[language] Write your reply in the language of the player's last message.`
+}
+
 export function renderLanguageDirective(language) {
   const name = CHAT_LANGUAGE_NAMES[language]
   if (!name) return ''

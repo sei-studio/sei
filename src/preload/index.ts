@@ -301,6 +301,42 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.draw.snapshotRequest, handler);
   },
 
+  // Forza 4 minigame (see src/shared/connect4Ipc.ts).
+  CONNECT4Start: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.CONNECT4.start, { characterId, playerColor: opts?.playerColor }),
+  CONNECT4GetState: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.getState, characterId),
+  CONNECT4Move: (characterId, column) =>
+    ipcRenderer.invoke(IpcChannel.CONNECT4.move, { characterId, column }),
+  CONNECT4Resign: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.resign, characterId),
+  CONNECT4Rematch: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.rematch, characterId),
+  CONNECT4End: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.end, characterId),
+  onCONNECT4State(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.CONNECT4.state, handler);
+    return () => ipcRenderer.off(IpcChannel.CONNECT4.state, handler);
+  },
+
+  // Battleship minigame (see src/shared/battleshipIpc.ts).
+  BATTLESHIPStart: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.start, { characterId, playerStarts: opts?.playerStarts }),
+  BATTLESHIPGetState: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.getState, characterId),
+  BATTLESHIPPlaceFleet: (characterId, ships) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.placeFleet, { characterId, ships }),
+  BATTLESHIPMove: (characterId, row, col) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.move, { characterId, row, col }),
+  BATTLESHIPResign: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.resign, characterId),
+  BATTLESHIPRematch: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.rematch, characterId),
+  BATTLESHIPEnd: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.end, characterId),
+  onBATTLESHIPState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.BATTLESHIP.state, handler);
+    return () => ipcRenderer.off(IpcChannel.BATTLESHIP.state, handler);
+  },
+
   // Minecraft dashboard (260721)
   mcDashboardGet: (characterId) => ipcRenderer.invoke(IpcChannel.mcdash.get, characterId),
   mcDashboardSetWatching: (characterId, watching) =>

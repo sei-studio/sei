@@ -138,6 +138,8 @@ import { liveSessionForRestart } from './components/UpdateRailButton';
 import { useVoiceStore } from './lib/stores/useVoiceStore';
 import { useBackseatStore } from './lib/stores/useBackseatStore';
 import { useChessStore } from './lib/stores/useChessStore';
+import { useConnect4Store } from './lib/stores/useConnect4Store';
+import { useBattleshipStore } from './lib/stores/useBattleshipStore';
 import { useDrawStore } from './lib/stores/useDrawStore';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 import { usePermissionResume } from './lib/permissions/usePermissionResume';
@@ -464,7 +466,8 @@ export function App(): React.ReactElement {
         chessGames: useChessStore.getState().games,
         backseat: backseat.active,
         drawGames: useDrawStore.getState().games,
-      }) !== null ||
+        connect4Games: useConnect4Store.getState().games,
+        battleshipGames: useBattleshipStore.getState().games,      }) !== null ||
       voice.participants.length > 0 ||
       backseat.sharingFor != null ||
       backseat.starting ||

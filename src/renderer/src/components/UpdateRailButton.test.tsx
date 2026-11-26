@@ -79,7 +79,15 @@ describe('UpdateRailButton', () => {
 });
 
 describe('liveSessionForRestart', () => {
-  const idle = { callStatus: 'idle', summons: {}, chessGames: {}, backseat: {}, drawGames: {} };
+  const idle = {
+    callStatus: 'idle',
+    summons: {},
+    chessGames: {},
+    backseat: {},
+    drawGames: {},
+    connect4Games: {},
+    battleshipGames: {},
+  };
 
   it('is null when nothing is running', () => {
     expect(liveSessionForRestart(idle)).toBeNull();
@@ -96,5 +104,17 @@ describe('liveSessionForRestart', () => {
     expect(liveSessionForRestart({ ...idle, chessGames: { a: { status: 'active' } } })).toBe('session');
     expect(liveSessionForRestart({ ...idle, backseat: { a: true } })).toBe('session');
     expect(liveSessionForRestart({ ...idle, drawGames: { a: { phase: 'drawing' } } })).toBe('session');
+    expect(liveSessionForRestart({ ...idle, connect4Games: { a: { status: 'active' } } })).toBe('session');
+    expect(liveSessionForRestart({ ...idle, battleshipGames: { a: { status: 'preparing' } } })).toBe('session');
+  });
+
+  it('ignores a finished minigame (261122)', () => {
+    expect(
+      liveSessionForRestart({
+        ...idle,
+        connect4Games: { a: { status: 'ended' } },
+        battleshipGames: { a: { status: 'ended' } },
+      }),
+    ).toBeNull();
   });
 });
