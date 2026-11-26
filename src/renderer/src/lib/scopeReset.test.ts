@@ -61,6 +61,8 @@ describe('resetAccountScopedState', () => {
     const { useBackseatStore } = await import('./stores/useBackseatStore');
     const { useChessStore } = await import('./stores/useChessStore');
     const { useDrawStore } = await import('./stores/useDrawStore');
+    const { useConnect4Store } = await import('./stores/useConnect4Store');
+    const { useBattleshipStore } = await import('./stores/useBattleshipStore');
     const { useUiStore } = await import('./stores/useUiStore');
     const { resetAccountScopedState } = await import('./scopeReset');
 
@@ -69,6 +71,8 @@ describe('resetAccountScopedState', () => {
     useBackseatStore.setState({ active: { sui: true } as never, sharingFor: 'sui', starting: true });
     useChessStore.setState({ games: { sui: { status: 'active' } as never }, panelIntent: { sui: true } as never });
     useDrawStore.setState({ games: { sui: { phase: 'drawing' } as never } });
+    useConnect4Store.setState({ games: { sui: { status: 'ended' } as never }, panelIntent: { sui: true } as never });
+    useBattleshipStore.setState({ games: { sui: { status: 'ended' } as never }, panelIntent: { sui: true } as never });
     useUiStore.getState().navigate({ kind: 'chat', characterId: 'sui' });
     useUiStore.getState().setGameFullscreen(true);
 
@@ -81,6 +85,10 @@ describe('resetAccountScopedState', () => {
     expect(useChessStore.getState().games).toEqual({});
     expect(useChessStore.getState().panelIntent).toEqual({});
     expect(useDrawStore.getState().games).toEqual({});
+    expect(useConnect4Store.getState().games).toEqual({});
+    expect(useConnect4Store.getState().panelIntent).toEqual({});
+    expect(useBattleshipStore.getState().games).toEqual({});
+    expect(useBattleshipStore.getState().panelIntent).toEqual({});
     expect(useUiStore.getState().view).toEqual({ kind: 'home' });
     expect(useUiStore.getState().gameFullscreen).toBe(false);
   });

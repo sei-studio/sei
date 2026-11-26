@@ -37,6 +37,8 @@ import { useVoiceStore } from './stores/useVoiceStore';
 import { useBackseatStore } from './stores/useBackseatStore';
 import { useChessStore } from './stores/useChessStore';
 import { useDrawStore } from './stores/useDrawStore';
+import { useConnect4Store } from './stores/useConnect4Store';
+import { useBattleshipStore } from './stores/useBattleshipStore';
 import { useUiStore, type View } from './stores/useUiStore';
 
 /** Screens that show one character's live or private surface. */
@@ -68,6 +70,8 @@ export function endLiveSurfaces(): void {
   } catch { /* keep going */ }
   try { useChessStore.getState().resetForScope(); } catch { /* keep going */ }
   try { useDrawStore.getState().resetForScope(); } catch { /* keep going */ }
+  try { useConnect4Store.getState().resetForScope(); } catch { /* keep going */ }
+  try { useBattleshipStore.getState().resetForScope(); } catch { /* keep going */ }
   try {
     const ui = useUiStore.getState();
     ui.setGameFullscreen(false);
