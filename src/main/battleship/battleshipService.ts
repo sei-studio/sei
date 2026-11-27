@@ -1132,20 +1132,22 @@ export function firedCellsText(grid: BATTLESHIPGrid): string {
 
 function shotText(h: BATTLESHIPShotRecord, whose: string): string {
   const name = battleshipCellName(h.row, h.col);
-  return `${name} (${h.sunkShip ? `sank ${whose} ${h.sunkShip}` : h.hit ? 'hit' : 'miss'})`;
+  return `${name} ${h.sunkShip ? `sank ${whose} ${h.sunkShip}` : h.hit ? 'hit' : 'miss'}`;
 }
 
 /** How many shots back each side the chat facts line shows. */
 const FACT_SHOTS = 2;
 
 /**
- * Chat-reply turns: the board as checked facts, written from the side the
- * character talks from, with the player named. With two grids alone Haiku
- * 5.5 mixed up whose board was whose ("that's a miss on my side, you still
- * have no sunk ship" right after the player sank its battleship, 261128
- * eval); with a "they / their" facts line it still flipped the pronouns when
- * talking to the player ("they sank mine", 4 of 4 probe replies), and
- * pointed the player at its own hits.
+ * Chat-reply turns: the board as checked facts, written the way the
+ * character says them TO the player ("you" = the player, "my" = its own).
+ * With two grids alone Haiku 5.5 mixed up whose board was whose ("that's a
+ * miss on my side, you still have no sunk ship" right after the player sank
+ * its battleship, 261128 eval). Probes of the wording, 6-8 replies each to
+ * "did i sink one of yours or did you sink one of mine?": "you sank their /
+ * they sank yours" was wrong 4/4 (it flipped the pronouns when talking to
+ * the player); the same from its side with the player named left 2/6 to
+ * 5/8 replies pointing the player at its own hits or flipping a sink.
  */
 export function chatFactsText(f: {
   player: string;
@@ -1157,24 +1159,24 @@ export function chatFactsText(f: {
   theirOpenHits: ReadonlyArray<string>;
 }): string {
   const P = f.player;
-  const sunk = (ships: ReadonlyArray<BATTLESHIPShip>): string => {
-    const names = ships.filter((sh) => sh.sunk).map((sh) => sh.name);
-    return names.length ? `${names.length} (${names.join(', ')})` : 'none';
+  const sunk = (ships: ReadonlyArray<BATTLESHIPShip>, whose: string): string => {
+    const names = ships.filter((sh) => sh.sunk).map((sh) => `${whose} ${sh.name}`);
+    return names.length ? names.join(', ') : `none of ${whose} ships yet`;
   };
   const last = (by: 'ai' | 'player', whose: string): string => {
     const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
     return shots.length ? shots.map((h) => shotText(h, whose)).join(', ') : 'none yet';
   };
   return [
-    'Facts the app checked. Anything you say about the game has to match them.',
-    `Your ships ${P} has sunk: ${sunk(f.yourShips)}. ${P}'s ships you have sunk: ${sunk(f.theirShips)}.`,
-    `${P}'s last shots, on your board, newest first: ${last('player', 'your')}.`,
-    `Your last shots, at ${P}'s fleet (cells ${P} never shoots at), newest first: ${last('ai', `${P}'s`)}.`,
-    `${P}'s open hits on your board, ships not sunk yet: ${f.theirOpenHits.join(', ') || 'none'}.`,
-    `Next shot: ${f.turn === 'ai' ? 'yours' : `${P}'s`}.`,
-    `Talking to ${P}, "you" is ${P} and "my" is yours: ${P}'s shots sink your ships, and yours sink theirs. ` +
-      `If ${P} asks where to shoot, the only cells worth naming are ${P}'s open hits on your board, or none; ` +
-      'never name a cell you shot at.',
+    `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you). ` +
+      'Anything you say about the game has to match them:',
+    `- You sank: ${sunk(f.yourShips, 'my')}.`,
+    `- I sank: ${sunk(f.theirShips, 'your')}.`,
+    `- Your last shots, at my board: ${last('player', 'my')}.`,
+    `- My last shots, at your board: ${last('ai', 'your')}.`,
+    `- Your open hits on my board: ${f.theirOpenHits.join(', ') || 'none'}.`,
+    `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
+    `${P} only shoots at your board, so a shooting tip for ${P} can only name ${P}'s open hits there, never a cell you shot at.`,
   ].join('\n');
 }
 
