@@ -38,6 +38,13 @@ import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
 import { SPEECH_PACKS, type SpeechPackId } from './packs';
 import { packModelDir, packReady } from './packStore';
 import { sentenceCaseSttText } from './sentenceCase';
+import { loadAnalytics } from '../lazyAnalytics';
+import {
+  classifySpeechRuntimeFailure,
+  probeSpeechRuntime,
+  type SmartAppControlState,
+  type SpeechRuntimeFailureReason,
+} from './runtimeFailure';
 
 /** Renderer-facing sentinel: the voice pack is not downloaded. The suffix is
  * the pack id so the prompt can name the download. */
@@ -51,18 +58,55 @@ export function packMissingError(packId: SpeechPackId): Error {
 type SherpaModule = any;
 
 let sherpa: SherpaModule | null = null;
+/** A failed load is final for the process (issue #59, 261127): retrying
+ * re-runs the OS loader on every line, and on Windows each blocked attempt
+ * is another Code Integrity event and Smart App Control toast. */
+let sherpaFailure: Promise<Error> | null = null;
 
-function loadSherpa(): SherpaModule {
+async function loadSherpa(): Promise<SherpaModule> {
   if (sherpa) return sherpa;
+  if (sherpaFailure) throw await sherpaFailure;
   // Anchored to the bundle, NOT process.cwd(): a Finder-launched packaged app
   // runs from `/`, where a cwd-relative require finds no node_modules and every
   // local voice line failed with SPEECH_RUNTIME_FAILED (260915, v0.6.1).
+  const req = bundleRequire();
   try {
-    sherpa = bundleRequire()('sherpa-onnx-node');
+    sherpa = req('sherpa-onnx-node');
+    return sherpa;
   } catch (err) {
-    throw new Error(`SPEECH_RUNTIME_FAILED: sherpa-onnx-node load failed: ${(err as Error).message}`);
+    const loadMessage = (err as Error)?.message ?? String(err);
+    sherpaFailure = diagnoseSherpaFailure(req, loadMessage);
+    throw await sherpaFailure;
   }
-  return sherpa;
+}
+
+/** Why the load failed (runtimeFailure.ts), reported once, as the error every
+ * later caller gets. The reason is the sentinel's second field, which the
+ * call notice reads: `SPEECH_RUNTIME_FAILED: os_blocked: ...`. */
+async function diagnoseSherpaFailure(req: NodeJS.Require, loadMessage: string): Promise<Error> {
+  let reason: SpeechRuntimeFailureReason = 'load_error';
+  let sac: SmartAppControlState = 'unknown';
+  try {
+    const probe = await probeSpeechRuntime(req);
+    reason = classifySpeechRuntimeFailure(probe);
+    sac = probe.sac;
+    if (probe.loadError) console.warn(`[sei/speech] sherpa-onnx native load failed: ${probe.loadError}`);
+  } catch {
+    /* the probe never throws; keep 'load_error' if it somehow does */
+  }
+  console.warn(`[sei/speech] local speech runtime unavailable (${reason}, smart app control ${sac})`);
+  void loadAnalytics()
+    .then(({ captureDiagnostic }) => captureDiagnostic('speech_runtime_failed', { reason, sac_state: sac }))
+    .catch(() => {
+      /* analytics is never load-bearing */
+    });
+  return new Error(`SPEECH_RUNTIME_FAILED: ${reason}: sherpa-onnx-node load failed: ${loadMessage}`);
+}
+
+/** Test seam: forget the loaded module and any cached failure. */
+export function _resetSherpaForTests(): void {
+  sherpa = null;
+  sherpaFailure = null;
 }
 
 // ── TTS ─────────────────────────────────────────────────────────────────────
@@ -118,7 +162,7 @@ async function ttsEngineFor(packId: SpeechPackId): Promise<TtsEngine> {
   if (!engine) {
     engine = (async () => {
       if (!(await packReady(packId))) throw packMissingError(packId);
-      const s = loadSherpa();
+      const s = await loadSherpa();
       // createAsync: model load runs off the main thread (a medium VITS model
       // takes ~1s to load; the first spoken line of a call must not stall UI).
       return (await s.OfflineTts.createAsync(ttsConfigFor(packId))) as TtsEngine;
@@ -227,7 +271,7 @@ function kokoroEngineFor(voice: KokoroVoice): Promise<TtsEngine> {
       );
     }
     const created = (async () =>
-      (await loadSherpa().OfflineTts.createAsync(
+      (await (await loadSherpa()).OfflineTts.createAsync(
         kokoroConfig(packModelDir('tts-kokoro'), voice),
       )) as TtsEngine)();
     engine = created;
@@ -317,7 +361,7 @@ async function sttEngineGet(language: string): Promise<SttEngine> {
   if (!engine) {
     engine = (async () => {
       if (!(await packReady('stt-sensevoice'))) throw packMissingError('stt-sensevoice');
-      const s = loadSherpa();
+      const s = await loadSherpa();
       const dir = packModelDir('stt-sensevoice');
       return (await s.OfflineRecognizer.createAsync({
         featConfig: { sampleRate: 16_000, featureDim: 80 },

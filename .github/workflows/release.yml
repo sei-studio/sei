@@ -424,6 +424,38 @@ jobs:
           }
           Write-Output "✓ Windows installer signed and Valid; publisherName '$expected' matches the cert"
 
+      - name: Verify Windows native signatures
+        # 261127 (issue #59): v0.7.0 signed Sei.exe but shipped every .dll and
+        # .node unsigned (electron-builder signs only .exe by default), and
+        # Windows 11 Smart App Control refused to load sherpa-onnx.node, so
+        # on-device voices were silent. win.signExts now covers .dll and .node;
+        # this fails a signed build where any PE file in the app folder (the
+        # tree both the NSIS installer and the Velopack packages are made
+        # from) is not Valid. Any valid signer passes: the check is that
+        # Windows will load it, not who signed it. Unsigned builds only report.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_PUBLISHER_NAME: ${{ !inputs.dry_run && vars.WIN_PUBLISHER_NAME || '' }}
+          AZURE_TENANT_ID: ${{ !inputs.dry_run && secrets.AZURE_TENANT_ID || '' }}
+        run: |
+          $signed = -not [string]::IsNullOrWhiteSpace($env:WIN_PUBLISHER_NAME) -and -not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)
+          $root = (Resolve-Path 'release/win-unpacked').Path
+          $files = @(Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll', '.node' })
+          if ($files.Count -eq 0) { Write-Output '::error::no PE files under release/win-unpacked'; exit 1 }
+          $bad = @()
+          foreach ($f in $files) {
+            $st = (Get-AuthenticodeSignature -LiteralPath $f.FullName).Status
+            if ($st -ne 'Valid') { $bad += "$($f.FullName.Substring($root.Length + 1))  status=$st" }
+          }
+          Write-Output "$($files.Count) PE files, $($files.Count - $bad.Count) Valid, $($bad.Count) not"
+          foreach ($b in $bad) { Write-Output "  $b" }
+          if ($signed -and $bad.Count -gt 0) {
+            Write-Output "::error::$($bad.Count) native file(s) in a signed build are not Valid signed. Smart App Control blocks unsigned natives (issue #59): check win.signExts in electron-builder.yml."
+            exit 1
+          }
+          if ($signed) { Write-Output 'Every .exe, .dll and .node in the app is Valid signed' } else { Write-Output 'Unsigned build (dry run or signing not configured): report only' }
+
       - name: Velopack pack (Windows)
         # 261030: the same app folder electron-builder just built (and, when
         # signing is configured, signed) is packed as a Velopack release for
@@ -503,6 +535,29 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $bad++ }
           }
           if ($bad -gt 0) { Write-Output "::error::$bad Velopack file(s) are not Valid signed by '$($env:WIN_PUBLISHER_NAME)'"; exit 1 }
+          # 261127 (issue #59): the natives inside each Full package must be
+          # Valid too (any signer: Microsoft's own DLLs are fine). vpk packs
+          # the folder electron-builder signed and is told not to re-sign
+          # .dll/.node, so this catches a pack from an unsigned folder.
+          $nativeBad = 0
+          $nativeCount = 0
+          foreach ($pkg in Get-ChildItem $env:UPLOAD -Filter '*-full.nupkg') {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg.FullName)
+            try {
+              $i = 0
+              foreach ($e in $zip.Entries) {
+                if ($e.FullName -notmatch '\.(dll|node)$') { continue }
+                $i++
+                $nativeCount++
+                $dest = Join-Path $check ("$($pkg.BaseName)-native-$i" + [System.IO.Path]::GetExtension($e.Name))
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true)
+                $st = (Get-AuthenticodeSignature -LiteralPath $dest).Status
+                if ($st -ne 'Valid') { Write-Output "  $($pkg.Name): $($e.FullName)  status=$st"; $nativeBad++ }
+              }
+            } finally { $zip.Dispose() }
+          }
+          Write-Output "Velopack packages: $nativeCount native file(s), $nativeBad not Valid"
+          if ($signed -and $nativeBad -gt 0) { Write-Output "::error::$nativeBad native file(s) in the Velopack packages are not Valid signed (issue #59)"; exit 1 }
           if ($signed) { Write-Output 'Velopack Setup and package binaries are signed and Valid' } else { Write-Output 'Velopack output is unsigned (dry run or signing not configured)' }
 
       - name: Smoke-launch the Velopack build (Windows)

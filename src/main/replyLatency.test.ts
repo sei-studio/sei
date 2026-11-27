@@ -230,6 +230,35 @@ describe('parseBotReplyLatency', () => {
     });
   });
 
+  it('carries the bot phases (261126): a bad phase drops alone, never the sample', () => {
+    const raw = {
+      type: 'reply-latency', origin: 'game', turn: 1, ms: 9000, outcome: 'replied', via: 'say',
+      dispatch_ms: 3, llm_request_ms: 40, llm_last_request_ms: 4100, llm_response_ms: 8900,
+      llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, llm_rate_limited: 0, busy_at_line: 'action',
+      // Junk: a negative phase, a fractional count, a free-form state, an unknown key.
+      dispatch_extra_ms: 5, text: 'hello',
+    };
+    const s = parseBotReplyLatency(raw)!;
+    expect(s.phases).toEqual({ dispatch_ms: 3, llm_request_ms: 40, llm_last_request_ms: 4100, llm_response_ms: 8900, llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, llm_rate_limited: 0 });
+    expect(s.busyAtLine).toBe('action');
+    const bad = parseBotReplyLatency({ ...raw, llm_response_ms: -1, llm_calls: 1.5, busy_at_line: 'typing hello' })!;
+    expect(bad).not.toBeNull();
+    expect(bad.phases).not.toHaveProperty('llm_response_ms');
+    expect(bad.phases).not.toHaveProperty('llm_calls');
+    expect(bad.busyAtLine).toBeUndefined();
+    const props = replyLatencyProps(s)!;
+    expect(props).toMatchObject({ surface: 'minecraft', ms: 9000, dispatch_ms: 3, llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, busy_at_line: 'action' });
+    expect(props).not.toHaveProperty('text');
+    expect(props).not.toHaveProperty('dispatch_extra_ms');
+    // Routed app chat (chat / in_game) is bot-timed too.
+    const routed = replyLatencyProps(parseBotReplyLatency({ ...raw, origin: 'app' })!)!;
+    expect(routed).toMatchObject({ surface: 'chat', path: 'in_game', llm_request_ms: 40, busy_at_line: 'action' });
+    // A bot key never rides a voice or app-chat sample.
+    const voice = replyLatencyProps({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', phases: { llm_model_ms: 9 } as never, busyAtLine: 'idle' });
+    expect(voice).not.toHaveProperty('llm_model_ms');
+    expect(voice).not.toHaveProperty('busy_at_line');
+  });
+
   it('rejects anything malformed', () => {
     expect(parseBotReplyLatency({ type: 'reply-latency', origin: 'x', turn: 1, ms: 1, outcome: 'replied' })).toBeNull();
     expect(parseBotReplyLatency({ type: 'session-digest' })).toBeNull();
@@ -348,8 +377,10 @@ describe('chat phases (261125, O5)', () => {
     const app = replyLatencyProps({ ...base, path: 'app', phases });
     expect(app).toMatchObject({ prompt_start_ms: 4, llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1 });
     expect(app).not.toHaveProperty('llm_first_token_ms');
+    // 261126: a chat routed into a live game is bot-timed: bot keys only.
     const inGame = replyLatencyProps({ ...base, path: 'in_game', phases });
-    expect(inGame).not.toHaveProperty('llm_request_ms');
+    expect(inGame).not.toHaveProperty('prompt_start_ms');
+    expect(inGame).toMatchObject({ llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1 });
     // A voice-only key never rides a chat sample, nor a chat-only key a voice one.
     const chatWithVoiceKey = replyLatencyProps({ ...base, path: 'app', phases: { tts_first_chunk_ms: 100 } });
     expect(chatWithVoiceKey).not.toHaveProperty('tts_first_chunk_ms');

@@ -43,7 +43,18 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   the per-machine migration hook (`build/installer.nsh`) are documented above
   the `nsis:` block in electron-builder.yml; `.github/workflows/nsis-upgrade-check.yml`
   (manual dispatch) re-verifies them on windows-latest. Release builds are
-  signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
+  signed through Azure Trusted Signing. Since 261127 (issue #59) that covers
+  every `.dll` and `.node` too (`win.signExts`): v0.7.0 signed only the
+  `.exe` files, and Windows 11 Smart App Control refused the unsigned
+  `sherpa-onnx.node`, silencing on-device voices. The release step "Verify
+  Windows native signatures" fails a signed build with any PE file in
+  `release/win-unpacked` that is not Valid, and the Velopack verify step
+  checks the natives inside each Full package. Game packs
+  (`scripts/build-game-pack.mjs`) are NOT signed yet: the Minecraft win pack's
+  `canvas` and `gl` natives (POV vision) are unsigned. Signing them is open:
+  a timestamped signature differs per build, so the pack `treeHash` would
+  change every release and defeat the no-download re-link in
+  `src/main/games/packs.ts`.
 - **Linux:** AppImage (best-effort unsigned).
 - **WorldLink desktop host addon (261104):** `native/seilink` is built by
   `scripts/build-seilink-addon.mjs` (mac universal via lipo, win x64) into

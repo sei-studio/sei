@@ -100,6 +100,19 @@ describe('Kokoro TTS routing', () => {
     expect(notices).toEqual([{ kind: 'kokoro-fallback', characterId: 'c1', reason: 'failed' }]);
   });
 
+  it('surfaces a runtime that will not load instead of falling back to Fast (issue #59)', async () => {
+    // First line: the load failure itself; later lines: Kokoro's cached create failure.
+    for (const msg of [
+      'SPEECH_RUNTIME_FAILED: os_blocked: sherpa-onnx-node load failed: Could not find sherpa-onnx-node',
+      'VOICE_TTS_FAILED: Kokoro could not load: SPEECH_RUNTIME_FAILED: os_blocked: sherpa-onnx-node load failed: x',
+    ]) {
+      m.synthesize.mockRejectedValueOnce(new Error(msg));
+      await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow(/^SPEECH_RUNTIME_FAILED: os_blocked:/);
+    }
+    expect(m.local).not.toHaveBeenCalled();
+    expect(notices).toEqual([]);
+  });
+
   it('names the Kokoro pack when neither Kokoro nor any Fast pack is installed', async () => {
     m.ready.mockResolvedValue(false);
     m.synthesize.mockRejectedValue(new Error('VOICE_PACK_MISSING:tts-kokoro'));

@@ -126,9 +126,45 @@ function emptyAction() {
  * Shape only: where the line came from, its 1-based number in the session
  * (per origin), the wait in ms, and how it ended.
  *
+ * 261126 (O5, T554): the sample also says where the wait went, so the field
+ * can tell our time from the model's. All integer ms from the line's arrival
+ * (the same start as `ms`) unless noted, each absent when the turn never got
+ * there:
+ *   - `dispatch_ms`       the brain picked the line up (FSM dispatch, or a
+ *                         preempt folding it into a parked call). Above a few
+ *                         ms it waited behind other brain work.
+ *   - `llm_request_ms`    the first LLM request after the line went out
+ *                         (dispatch + preempt unwind + turn/snapshot build).
+ *   - `llm_last_request_ms` the request whose response carried the reply.
+ *   - `llm_response_ms`   that response arrived (absent when the reply went
+ *                         out mid-stream, a voice-call early say()).
+ *   - `llm_model_ms`      total time an LLM call was in flight inside the
+ *                         wait (calls in flight at the line are counted from
+ *                         the line). `ms - llm_model_ms` is client time:
+ *                         queueing, turn builds, inline tools, emit.
+ *   - `llm_calls`         COUNT of LLM requests started after the line, the
+ *                         reply's own included (tool rounds, retries).
+ *   - `llm_aborted`       COUNT of calls in the wait that ended aborted or
+ *                         timed out (preempt restarts, timeout retries).
+ *   - `llm_rate_limited`  COUNT of calls the client-side rate limit dropped
+ *                         in the wait (no request went out; a dropped turn).
+ *   - `busy_at_line`      closed enum, what the brain was doing when the line
+ *                         came in: idle (no turn open), llm (a call in
+ *                         flight), action (a world action running, no call),
+ *                         turn (a turn open between calls).
+ *
+ * @typedef {'idle'|'llm'|'action'|'turn'} BusyAtLine
  * @typedef {{ origin: 'game'|'app', turn: number, ms: number,
- *   outcome: 'replied'|'silent'|'error'|'aborted', via?: 'say'|'action' }} ReplyLatencySample
+ *   outcome: 'replied'|'silent'|'error'|'aborted', via?: 'say'|'action',
+ *   dispatch_ms?: number, llm_request_ms?: number, llm_last_request_ms?: number,
+ *   llm_response_ms?: number, llm_model_ms?: number, llm_calls?: number,
+ *   llm_aborted?: number, llm_rate_limited?: number, busy_at_line?: BusyAtLine }} ReplyLatencySample
  */
+
+/** 261126: closed `busy_at_line` values. */
+export const BUSY_AT_LINE = Object.freeze(['idle', 'llm', 'action', 'turn'])
+/** Backstop on LLM call records held for reply phases (one turn makes a handful). */
+const MAX_LLM_CALL_RECORDS = 64
 
 /**
  * @param {{ now?: () => number, unansweredMs?: number }} [opts]
@@ -144,9 +180,18 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
    * ('game' = typed in the game's chat, 'app' = a Sei chat routed in) and the
    * line's turn number for reply_latency.
    * `reported` = its reply_latency sample already went out (abandonPending).
-   * @type {{ at: number, origin: 'game'|'app', turn: number, reported?: boolean }[]}
+   * 261126: `dispatchAt` = when the brain first picked it up, `busy` = what
+   * the brain was doing when it arrived (reply phases).
+   * `rateLimited` = personality calls the rate limit dropped while it waited.
+   * @type {{ at: number, origin: 'game'|'app', turn: number, reported?: boolean, dispatchAt?: number, busy?: string, rateLimited?: number }[]}
    */
   let pendingChats = []
+  /**
+   * 261126: LLM calls that may overlap a waiting line, for reply phases.
+   * Trimmed to the in-flight ones whenever no line is waiting.
+   * @type {{ start: number, end?: number, aborted?: boolean, failed?: boolean }[]}
+   */
+  let llmCalls = []
   /** Timed player lines so far, per origin (reply_latency turn numbers). */
   let turns = { game: 0, app: 0 }
   /** When the last LLM error happened: an unanswered line after it ended in 'error'. */
@@ -172,14 +217,61 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       unanswered: 0,
       replied: 0,
       reply_ms_total: 0,
+      // 261126: personality calls dropped by the client-side rate limit.
+      llm_rate_limited: 0,
     }
     llmErrors = {}
     pendingChats = []
+    llmCalls = []
     turns = { game: 0, app: 0 }
     lastLlmErrorAt = -Infinity
     dirty = false
   }
   reset()
+
+  /** Drop finished call records nobody waiting can still need. */
+  function trimLlmCalls() {
+    if (pendingChats.length === 0) llmCalls = llmCalls.filter((c) => c.end === undefined)
+    if (llmCalls.length > MAX_LLM_CALL_RECORDS) llmCalls = llmCalls.slice(-MAX_LLM_CALL_RECORDS)
+  }
+
+  /**
+   * 261126: where one line's wait went (see ReplyLatencySample). Shape only:
+   * offsets and counts.
+   */
+  function phasesFor(p, t) {
+    const out = {}
+    const ms = (at) => Math.max(0, Math.round(at - p.at))
+    if (Number.isFinite(p.dispatchAt) && p.dispatchAt <= t) out.dispatch_ms = ms(p.dispatchAt)
+    if (p.busy && BUSY_AT_LINE.includes(p.busy)) out.busy_at_line = p.busy
+    let modelMs = 0
+    let calls = 0
+    let aborted = 0
+    let first = null
+    let last = null
+    for (const c of llmCalls) {
+      if (c.start > t) continue
+      const end = c.end === undefined || c.end > t ? t : c.end
+      if (end <= p.at) continue
+      modelMs += end - Math.max(c.start, p.at)
+      if (c.aborted && c.end !== undefined && c.end <= t) aborted += 1
+      if (c.start >= p.at) {
+        calls += 1
+        if (!first) first = c
+        last = c
+      }
+    }
+    if (first) out.llm_request_ms = ms(first.start)
+    if (last) {
+      out.llm_last_request_ms = ms(last.start)
+      if (last.end !== undefined && last.end <= t && !last.aborted && !last.failed) out.llm_response_ms = ms(last.end)
+    }
+    if (modelMs > 0 || calls > 0) out.llm_model_ms = Math.max(0, Math.round(modelMs))
+    out.llm_calls = calls
+    out.llm_aborted = aborted
+    out.llm_rate_limited = p.rateLimited ?? 0
+    return out
+  }
 
   /** Send one pending line's reply_latency sample (once per line). */
   function report(p, outcome, t, via) {
@@ -189,6 +281,7 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
     /** @type {ReplyLatencySample} */
     const sample = { origin: p.origin, turn: p.turn, ms: Math.max(0, t - p.at), outcome }
     if (via) sample.via = via
+    try { Object.assign(sample, phasesFor(p, t)) } catch {}
     try { latencySink(sample) } catch {}
   }
 
@@ -208,6 +301,7 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       } else keep.push(p)
     }
     pendingChats = keep
+    trimLlmCalls()
   }
 
   /**
@@ -226,6 +320,7 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       if (oldest) report(oldest, 'replied', t, via)
     }
     pendingChats = []
+    trimLlmCalls()
   }
 
   return {
@@ -261,6 +356,44 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       bump('llm_turns')
       bump(said ? 'say_turns' : 'silent_turns')
     },
+    /**
+     * 261126: an LLM request went out (reply phases). Returns a handle for
+     * noteLlmCallEnd. Timestamps only.
+     */
+    noteLlmCallStart() {
+      const rec = { start: now() }
+      llmCalls.push(rec)
+      trimLlmCalls()
+      return rec
+    },
+    /**
+     * 261126: that request settled. `aborted` = preempted or timed out,
+     * `failed` = any other error; neither carried a reply.
+     */
+    noteLlmCallEnd(rec, { aborted = false, failed = false } = {}) {
+      if (!rec || typeof rec !== 'object' || rec.end !== undefined) return
+      rec.end = now()
+      if (aborted) rec.aborted = true
+      else if (failed) rec.failed = true
+      trimLlmCalls()
+    },
+    /**
+     * 261126: a personality call was dropped by the client-side rate limit
+     * (orchestrator personalityBucket): no request went out. Counted for the
+     * session and for every line waiting at the time.
+     */
+    noteLlmRateLimited() {
+      bump('llm_rate_limited')
+      for (const p of pendingChats) p.rateLimited = (p.rateLimited ?? 0) + 1
+    },
+    /**
+     * 261126: the brain picked up the waiting player line(s) (FSM dispatch or
+     * a preempt fold). Only the first pickup of each line counts.
+     */
+    noteLineDispatched() {
+      const t = now()
+      for (const p of pendingChats) if (p.dispatchAt === undefined) p.dispatchAt = t
+    },
     noteLlmError(err) {
       lastLlmErrorAt = now()
       const c = classifyLlmError(err)
@@ -286,8 +419,9 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
      * not timed (the app's voice clock times calls). `origin` 'app' = a Sei
      * chat message routed into this session (deliverSeiChat).
      * 261112: `interrupted` = a voice line that cut her off mid-line.
+     * 261126: `busy` = what the brain was doing when it arrived (BUSY_AT_LINE).
      */
-    notePlayerChat({ voice = false, origin = 'game', interrupted = false } = {}) {
+    notePlayerChat({ voice = false, origin = 'game', interrupted = false, busy = null } = {}) {
       sweep()
       if (voice) {
         bump('voice_msgs')
@@ -297,7 +431,9 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       bump('player_msgs')
       const o = origin === 'app' ? 'app' : 'game'
       turns[o] += 1
-      pendingChats.push({ at: now(), origin: o, turn: turns[o] })
+      const entry = { at: now(), origin: o, turn: turns[o] }
+      if (typeof busy === 'string' && BUSY_AT_LINE.includes(busy)) entry.busy = busy
+      pendingChats.push(entry)
     },
     /** 261112: she stopped her action (stop or unfollow) in answer to a cut-in line. Once per line. */
     noteInterruptStop() { bump('voice_interrupt_stops') },

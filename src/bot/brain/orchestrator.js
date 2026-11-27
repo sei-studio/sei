@@ -3352,6 +3352,10 @@ function maybeWarnByteCap(loop, warned) {
       }
     }
 
+    // 261126 (O5): reply_latency `dispatch_ms`, the brain picked the line up
+    // (after the death hold above, which re-sends it later).
+    if (isPlayerChat) { try { sessionActionStats.noteLineDispatched() } catch {} }
+
     // 261011: a NEW player line, attack or death preempts whatever is left of
     // a previous turn's drained batch, exactly as it preempts a live action.
     // Events teardownLoop re-fired itself (drainSpared) are not new.
@@ -6935,6 +6939,8 @@ function maybeWarnByteCap(loop, warned) {
   async function callPersonality(loop, signal) {
     if (!personalityBucket.tryAcquire()) {
       logger.warn('[sei/orch] Rate limit hit — dropping personality call')
+      // 261126 (O5): counted, so a silent reply can be traced to it.
+      try { sessionActionStats.noteLlmRateLimited() } catch {}
       return null
     }
     const budget = config.anthropic.thinking_budget_tokens ?? 0
@@ -6995,6 +7001,11 @@ function maybeWarnByteCap(loop, warned) {
           loop._earlySay = { id: toolUseId, text, result: _emitSayLine(loop, text) }
         }
       : undefined
+    // 261126 (O5): reply_latency phases (actionStats.js). Timestamps only.
+    let callStat = null
+    try { callStat = sessionActionStats.noteLlmCallStart() } catch {}
+    let callAborted = false
+    let callFailed = false
     try {
       const resp = await anthropic.call({
       systemBlocks: cachedSystemBlocks,
@@ -7031,8 +7042,11 @@ function maybeWarnByteCap(loop, warned) {
           sessionActionStats.noteLlmError(err)
         }
       } catch {}
+      if (err?.isTimeout === true || err?.name === 'AbortError' || signal?.aborted) callAborted = true
+      else callFailed = true
       throw err
     } finally {
+      try { sessionActionStats.noteLlmCallEnd(callStat, { aborted: callAborted, failed: callFailed }) } catch {}
       loop._llmCallInFlight = false
       // One-shot: consumed by this call, never by the next one.
       loop._replaySay = null
@@ -7096,6 +7110,9 @@ function maybeWarnByteCap(loop, warned) {
         cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
       }
       try { loop.abortController.abort() } catch {}
+      // 261126 (O5): a claimed line never reaches handleDispatch; this fold
+      // is its pickup (reply_latency `dispatch_ms`).
+      try { sessionActionStats.noteLineDispatched() } catch {}
       // Claimed events never reach handleDispatch, so its drain preempt check
       // would miss this line.
       if (!(data && typeof data === 'object' && drainSpared.has(data))) abortDrain('player spoke')

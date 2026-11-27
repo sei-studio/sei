@@ -23,6 +23,15 @@
  * hard timeout (cloudTimeoutMs); a null/rejected/timed-out pass resolves ''
  * (the utterance is dropped upstream) and reports via onCloudFailure. A
  * cloud '' stays trusted non-speech and is NOT a failure.
+ *
+ * 261127 audio events: a cloud pass can say its text is nothing but an audio
+ * event (Scribe's bare "(laughs)", mapped to "haha" in main). Before this the
+ * arbiter delivered it like any transcript, and a breath or a keyboard click
+ * that opened the VAD reached the companion as the player laughing. Now an
+ * event-only pass is kept only when `acceptAudioEvent` says the clip itself
+ * had a voice in it (dictation.ts laughHasVoice); otherwise it is ''. This
+ * runs wherever a cloud pass is delivered: the race, the empty-local wait
+ * (the laughter path) and cloud-only mode.
  */
 
 export type LocalTranscribe = (audio: Float32Array) => Promise<string>;
@@ -31,10 +40,19 @@ export type LocalTranscribe = (audio: Float32Array) => Promise<string>;
  *  trigger frame and its tail), where Scribe is known to invent a word out of
  *  her echo; the cloud leg judges its confidence (see burstWordUnsure in
  *  dictation.ts). */
-export type SttHint = { burst?: boolean };
-/** Resolves transcript text, or null when cloud could not produce one
- * (unavailable, transport error, timeout). Must not reject. */
-export type CloudTranscribe = (audio: Float32Array, hint?: SttHint) => Promise<string | null>;
+export type SttHint = {
+  burst?: boolean;
+  /** 261127: the frame energy the VAD opens speech at for this clip (its
+   *  noise floor and the sensitivity setting folded in), for judging whether
+   *  an audio-event-only pass had a voice behind it. */
+  voiceBar?: number;
+};
+/** A cloud pass that knows more than its text (261127): `audioEvent` says
+ * the text is only an audio event ("haha" from a bare laughter tag). */
+export type CloudPass = { text: string; audioEvent?: 'laugh' };
+/** Resolves transcript text (or a CloudPass), or null when cloud could not
+ * produce one (unavailable, transport error, timeout). Must not reject. */
+export type CloudTranscribe = (audio: Float32Array, hint?: SttHint) => Promise<string | CloudPass | null>;
 
 /** Local finished; not a transcript. */
 const LOCAL_DONE = Symbol('local-done');
@@ -54,10 +72,27 @@ export function createSttArbiter(opts: {
    * or timeout) so the utterance was dropped. Fired per failed utterance —
    * the caller owns any once-per-call gating. */
   onCloudFailure?: () => void;
+  /** 261127: whether an audio-event-only cloud pass is kept (the clip had a
+   *  voice in it). Absent: every such pass is kept, as before. */
+  acceptAudioEvent?: (audio: Float32Array, hint?: SttHint) => boolean;
+  /** Fired once per audio-event-only cloud pass that is delivered, with the
+   *  verdict. Counts only (voice_call_ended stt_laugh_kept / _dropped). */
+  onAudioEvent?: (kept: boolean) => void;
 }): (audio: Float32Array, hint?: SttHint) => Promise<string> {
   const cloudTimeoutMs = opts.cloudTimeoutMs ?? DEFAULT_CLOUD_TIMEOUT_MS;
   return async (audio: Float32Array, hint?: SttHint): Promise<string> => {
     const { local, cloud } = opts;
+    /** The text a cloud pass delivers. Applied only where a pass is actually
+     *  used, so a pass the race discards is never counted. */
+    const delivered = (r: string | CloudPass): string => {
+      if (typeof r === 'string') return r;
+      if (!r.audioEvent || !r.text || !opts.acceptAudioEvent) return r.text;
+      const kept = opts.acceptAudioEvent(audio, hint);
+      opts.onAudioEvent?.(kept);
+      return kept ? r.text : '';
+    };
+    const isPass = (r: unknown): r is string | CloudPass =>
+      typeof r === 'string' || (typeof r === 'object' && r !== null && typeof (r as CloudPass).text === 'string');
     if (!local) {
       // Cloud-only: no worker, no fallback. '' (dropped upstream) is the only
       // graceful degradation; report the failure so the surface can offer the
@@ -76,7 +111,7 @@ export function createSttArbiter(opts: {
       });
       const outcome = await Promise.race([cloudP, timeout]);
       clearTimeout(timer);
-      if (typeof outcome === 'string') return outcome; // '' stays trusted non-speech
+      if (isPass(outcome)) return delivered(outcome); // '' stays trusted non-speech
       opts.onCloudFailure?.();
       return '';
     }
@@ -95,9 +130,11 @@ export function createSttArbiter(opts: {
       // window doesn't apply: wait for cloud outright. This is the laughter
       // path: tiny's noise filter eats a laugh ('' in well under the grace
       // window) while Scribe is still coming back with "(laughs)" → "haha".
+      // 261127: a late "(laughs)" with no voice behind it is '' here too
+      // (see `delivered`): this wait is where a breath used to become "haha".
       if ((await localP) === '') {
         const late = await cloudP;
-        return typeof late === 'string' ? late : '';
+        return isPass(late) ? delivered(late) : '';
       }
       // Local has real words — cloud gets graceMs more, not a moment longer.
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -107,6 +144,6 @@ export function createSttArbiter(opts: {
       outcome = await Promise.race([cloudP, grace]);
       clearTimeout(timer);
     }
-    return typeof outcome === 'string' ? outcome : localP;
+    return isPass(outcome) ? delivered(outcome) : localP;
   };
 }

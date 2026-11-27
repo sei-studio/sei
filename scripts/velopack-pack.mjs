@@ -42,10 +42,11 @@ const AZURE_VARS = [
   'AZURE_CERT_PROFILE',
 ];
 /**
- * Files vpk would otherwise sign one by one. The app has a few hundred native
- * DLL/.node files under node_modules; signing every one is a signature each,
- * per channel, per release. electron-builder already signed Sei.exe, and vpk
- * signs Update.exe and the Setup itself.
+ * Files vpk would otherwise sign one by one, a signature each, per channel,
+ * per release. They are already signed: electron-builder signs Sei.exe and,
+ * since 261127 (issue #59, win.signExts), every .dll and .node in
+ * release/win-unpacked before this script packs it. vpk signs Update.exe and
+ * the Setup itself.
  */
 const SIGN_EXCLUDE = '(?i)\\.(dll|node)$';
 

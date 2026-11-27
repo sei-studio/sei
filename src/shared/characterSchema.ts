@@ -839,6 +839,19 @@ export const UserConfigSchema = z.object({
    */
   call_convo_starters: z.boolean().optional().default(true),
   /**
+   * Settings > Microphone (261127): the input device for every capture of the
+   * player's voice (renderer lib/voice/micPrefs.ts). Absent or '' = the system
+   * default. A device id is per machine; a saved id that is not plugged in
+   * falls back to the default with a one-line call notice.
+   */
+  mic_device_id: z.string().max(512).optional(),
+  /**
+   * Settings > Microphone sensitivity, 0..100 (default 50 when absent). Scales
+   * the voice VAD's speech-open threshold (micPrefs.micGateScale): 50 is the
+   * threshold every earlier build used, lower needs louder speech.
+   */
+  mic_sensitivity: z.number().int().min(0).max(100).optional(),
+  /**
    * 260730 — call backdrop mode, per character id: true = open the call in the
    * character's scene (or, for characters with no scene, on their art) instead
    * of the avatar-tile view. Toggled from the call's own controls, not
