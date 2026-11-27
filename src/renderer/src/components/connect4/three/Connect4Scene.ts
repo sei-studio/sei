@@ -1,11 +1,12 @@
 /**
  * Connect4Scene — the 3D Four in a Row table (three.js, no React).
  *
- * Same family as the chess table (shared TabletopStage: room, lights, wood
- * table, on-demand rendering): an upright painted-wood frame stands on walnut
- * feet in the middle of the table, 42 holes over a slot the discs fall
- * through. Each side's discs wait in short stacks on the table (player left,
- * companion right) and shrink as the game goes on.
+ * A sunny room (its own TabletopStage environment, see SUNNY_ROOM): a light
+ * birch table, warm cream walls, a bright key with soft shadows. An upright
+ * cobalt-painted frame stands on matching feet in the middle of the table,
+ * 42 holes over a slot the discs fall through. Each side's discs wait in
+ * short stacks on the table (player left, companion right) and shrink as the
+ * game goes on.
  *
  * Driven imperatively by Connect4Board3D.tsx:
  *   setBoard       new discs drop in from above the frame and bounce to rest;
@@ -22,7 +23,15 @@
 import * as THREE from 'three';
 import type { CONNECT4Color } from '@shared/connect4Ipc';
 import { makeWoodTexture } from '../../chess/three/woodTexture';
-import { TabletopStage, applyLift, easeOutBack, endFraming, smooth } from '../../tabletop/TabletopStage';
+import {
+  TabletopStage,
+  applyLift,
+  easeOutBack,
+  endFraming,
+  smooth,
+  tableRoom,
+  type TableRoomOptions,
+} from '../../tabletop/TabletopStage';
 import { COLS, ROWS, discsInHand, type Board, type Cell } from '../connect4Util';
 
 // ── Layout (1 unit = one column) ──────────────────────────────────────────
@@ -48,6 +57,19 @@ const BOUNCE = 0.3;
 
 const C_RED = 0xd8473b;
 const C_YELLOW = 0xf2b430;
+
+/**
+ * Airy and cheerful: cream walls, a light birch table, a bright warm key with
+ * soft, light shadows and a generous sky fill so nothing goes muddy.
+ */
+const SUNNY_ROOM: TableRoomOptions = {
+  room: 0xf6ead6,
+  hemi: { sky: 0xfffaf0, ground: 0xd9c3a2, intensity: 1.35 },
+  key: { color: 0xfff3dc, intensity: 2.5, position: [4, 12, 9], extent: 9, mapSize: 1024, radius: 5, shadowIntensity: 0.55 },
+  fill: { color: 0xdfeaff, intensity: 0.45, position: [-7, 6, 5] },
+  wood: { base: [232, 208, 172], stripe: [221, 194, 155], streak: [204, 174, 133], seed: 11, frequency: 0.09 },
+  roughness: 0.58,
+};
 const C_RING = 0xffd56b;
 const C_GLOW = 0xfff3d6;
 
@@ -111,21 +133,22 @@ export class Connect4Scene {
   onLayout: () => void = () => undefined;
 
   constructor(container: HTMLElement) {
-    this.stage = new TabletopStage(container, { shadowExtent: 9, keyPosition: [5, 12, 9] });
+    this.stage = new TabletopStage(container, { environment: tableRoom(SUNNY_ROOM), exposure: 1.0 });
     const own = this.stage.own.bind(this.stage);
     const scene = this.stage.scene;
 
-    // ── Frame: painted teal wood panels with 42 holes ──
+    // ── Frame: cobalt-painted wood panels with 42 holes (pops on the light table) ──
     const paint = own(
-      makeWoodTexture({ base: [58, 112, 124], stripe: [48, 98, 110], streak: [36, 80, 92], seed: 41, frequency: 0.05 }),
+      makeWoodTexture({ base: [40, 96, 204], stripe: [36, 88, 192], streak: [30, 76, 172], seed: 41, frequency: 0.05 }),
     );
     paint.repeat.set(0.16, 0.16);
     const panelMat = own(new THREE.MeshStandardMaterial({ map: paint, roughness: 0.46, metalness: 0.02 }));
-    const walnut = own(
-      makeWoodTexture({ base: [82, 50, 27], stripe: [58, 33, 17], streak: [40, 22, 11], seed: 29, frequency: 0.06 }),
+    // Posts, feet and slot floor: a deeper navy paint, same family as the frame.
+    const navy = own(
+      makeWoodTexture({ base: [28, 58, 138], stripe: [25, 52, 126], streak: [20, 44, 110], seed: 29, frequency: 0.06 }),
     );
-    walnut.repeat.set(0.5, 0.5);
-    const walnutMat = own(new THREE.MeshStandardMaterial({ map: walnut, roughness: 0.5, metalness: 0.02 }));
+    navy.repeat.set(0.5, 0.5);
+    const navyMat = own(new THREE.MeshStandardMaterial({ map: navy, roughness: 0.5, metalness: 0.02 }));
 
     const shape = roundedRect(-PANEL_HALF_W, BASE_Y, PANEL_HALF_W * 2, PANEL_TOP - BASE_Y, 0.22);
     for (let r = 0; r < ROWS; r++) {
@@ -159,7 +182,7 @@ export class Connect4Scene {
 
     // Floor of the slot (discs rest on it) and the two side posts with feet.
     const floorGeo = own(new THREE.BoxGeometry(PANEL_HALF_W * 2, ROW0_Y - DISC_R - BASE_Y, PANEL_IN * 2));
-    const floor = new THREE.Mesh(floorGeo, walnutMat);
+    const floor = new THREE.Mesh(floorGeo, navyMat);
     floor.position.set(0, (BASE_Y + ROW0_Y - DISC_R) / 2, 0);
     floor.receiveShadow = true;
     scene.add(floor);
@@ -167,12 +190,12 @@ export class Connect4Scene {
     const postGeo = own(roundedBox(0.3, postH, 0.82, 0.06));
     const footGeo = own(roundedBox(0.42, 0.26, 2.5, 0.08));
     for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(postGeo, walnutMat);
+      const post = new THREE.Mesh(postGeo, navyMat);
       post.position.set(side * (PANEL_HALF_W + 0.13), postH / 2, 0);
       post.castShadow = true;
       post.receiveShadow = true;
       scene.add(post);
-      const foot = new THREE.Mesh(footGeo, walnutMat);
+      const foot = new THREE.Mesh(footGeo, navyMat);
       foot.position.set(side * (PANEL_HALF_W + 0.13), 0.13, 0);
       foot.castShadow = true;
       foot.receiveShadow = true;

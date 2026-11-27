@@ -18,10 +18,54 @@
   flex-direction: column;
   background: var(--bg2);
   /* Over-scene ink (art colors, see header note). */
+  --scene-room: #1a120c;
   --scene-ink: rgba(242, 234, 217, 0.92);
   --scene-ink-soft: rgba(242, 234, 217, 0.62);
+  --scene-ink-turn: rgba(242, 234, 217, 0.85);
+  --scene-ink-faint: rgba(242, 234, 217, 0.55);
   --scene-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  --scene-icon-shadow: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  --scene-accent: var(--accent);
+  --scene-callout-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  --scene-hover: rgba(242, 234, 217, 0.08);
+  --scene-press: rgba(242, 234, 217, 0.16);
+  --scene-hit: #ffb199;
+  --scene-sunk: #ffd56b;
   --scene-error: #ffc2b8;
+  --scene-scrim:
+    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0) 100%),
+    linear-gradient(180deg, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0.6) 55%, rgba(10, 7, 4, 0.74) 100%);
+}
+
+/* A bright scene (sunny room, daytime sea) behind the HUD: dark ink with a
+   soft light halo instead of cream ink with a dark one. Same art-color rule:
+   these follow the scene, not the app theme. */
+.brightScene {
+  --scene-ink: rgba(24, 33, 48, 0.92);
+  --scene-ink-soft: rgba(24, 33, 48, 0.7);
+  --scene-ink-turn: rgba(24, 33, 48, 0.86);
+  --scene-ink-faint: rgba(24, 33, 48, 0.58);
+  --scene-text-shadow: 0 0 6px rgba(255, 255, 255, 0.85), 0 1px 1px rgba(255, 255, 255, 0.7);
+  --scene-icon-shadow: drop-shadow(0 0 3px rgba(255, 255, 255, 0.85));
+  --scene-accent: #2a5bb8;
+  --scene-callout-shadow: 0 0 10px rgba(255, 255, 255, 0.9), 0 1px 2px rgba(255, 255, 255, 0.8);
+  --scene-hover: rgba(24, 33, 48, 0.07);
+  --scene-press: rgba(24, 33, 48, 0.14);
+  --scene-hit: #d2412c;
+  --scene-sunk: #b7700a;
+  --scene-error: #b3261e;
+  --scene-scrim:
+    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(255, 252, 245, 0.62) 0%, rgba(255, 252, 245, 0.2) 100%),
+    linear-gradient(180deg, rgba(255, 252, 245, 0.35) 0%, rgba(255, 252, 245, 0.45) 100%);
+}
+
+/* The backdrop each bright scene clears to (Four in a Row's room, the sea haze). */
+.sunnyRoom {
+  --scene-room: #f6ead6;
+}
+
+.openSea {
+  --scene-room: #a6dcec;
 }
 
 .stage {
@@ -41,8 +85,8 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* Art color: the scene's room color, so resize flashes stay dark. */
-  background: #1a120c;
+  /* Art color: the scene's own backdrop, so load and resize flashes match it. */
+  background: var(--scene-room);
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -91,8 +135,8 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  color: rgba(242, 234, 217, 0.85);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  color: var(--scene-ink-turn);
+  text-shadow: var(--scene-text-shadow);
 }
 
 .subTag {
@@ -100,8 +144,8 @@
   font-size: 10px;
   letter-spacing: 0.05em;
   white-space: nowrap;
-  color: rgba(242, 234, 217, 0.55);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  color: var(--scene-ink-faint);
+  text-shadow: var(--scene-text-shadow);
 }
 
 /* "{Name} couldn't move" + Try again: the turn line with a borderless action. */
@@ -115,22 +159,25 @@
 /* Doubled class: wins over .sceneBtn's soft ink, which is declared later. */
 .sceneBtn.retryBtn {
   height: 24px;
-  color: var(--accent);
+  color: var(--scene-accent);
 }
 
 .sceneBtn.retryBtn:hover:not(:disabled) {
-  color: color-mix(in srgb, var(--accent) 80%, white);
+  color: color-mix(in srgb, var(--scene-accent) 80%, var(--scene-ink));
 }
 
 /* "{Name} is thinking…" shimmer, same as chess. */
 .thinking {
   background: linear-gradient(
     90deg,
-    rgba(242, 234, 217, 0.55) 20%,
-    var(--accent) 50%,
-    rgba(242, 234, 217, 0.55) 80%
+    var(--scene-ink-faint) 20%,
+    var(--scene-accent) 50%,
+    var(--scene-ink-faint) 80%
   );
   background-size: 200% 100%;
+  /* A text-shadow would paint over the clipped gradient; glow the box instead. */
+  text-shadow: none;
+  filter: var(--scene-icon-shadow);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -156,16 +203,16 @@
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--scene-ink);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  text-shadow: var(--scene-callout-shadow);
   animation: tabletopCallout 1700ms var(--ease) both;
 }
 
 .calloutHit {
-  color: #ffb199;
+  color: var(--scene-hit);
 }
 
 .calloutSunk {
-  color: #ffd56b;
+  color: var(--scene-sunk);
 }
 
 @keyframes tabletopCallout {
@@ -191,7 +238,7 @@
 @media (prefers-reduced-motion: reduce) {
   .thinking {
     animation: none;
-    color: rgba(242, 234, 217, 0.62);
+    color: var(--scene-ink-soft);
     background: none;
   }
   .callout {
@@ -244,13 +291,13 @@
   border: none;
   background: transparent;
   color: var(--scene-ink-soft);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  filter: var(--scene-icon-shadow);
   cursor: pointer;
   transition: color 120ms var(--ease);
 }
 
 .ctrlBtn:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--scene-accent);
 }
 
 .ctrlBtn:disabled {
@@ -316,16 +363,16 @@
 }
 
 .sceneBtn svg {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  filter: var(--scene-icon-shadow);
 }
 
 .sceneBtn:hover:not(:disabled) {
   color: var(--scene-ink);
-  background: rgba(242, 234, 217, 0.08);
+  background: var(--scene-hover);
 }
 
 .sceneBtn:active:not(:disabled) {
-  background: rgba(242, 234, 217, 0.16);
+  background: var(--scene-press);
 }
 
 .sceneBtn:disabled {
@@ -451,9 +498,7 @@
 .launchScrim {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0) 100%),
-    linear-gradient(180deg, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0.6) 55%, rgba(10, 7, 4, 0.74) 100%);
+  background: var(--scene-scrim);
 }
 
 .launchContent {
@@ -541,7 +586,7 @@
 
 .sideBtnActive,
 .sideBtnActive:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--scene-accent);
 }
 
 /* Small colored dot before a side name (Four in a Row disc colors). */

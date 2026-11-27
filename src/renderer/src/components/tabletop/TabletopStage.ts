@@ -1,13 +1,14 @@
 /**
- * TabletopStage — the shared 3D "wooden table" stage for the tabletop
- * minigames (Four in a Row, Fleet Battle), in the same family as the chess
- * scene (components/chess/three/ChessScene.ts).
+ * TabletopStage — the shared 3D stage for the minigames (Four in a Row,
+ * Fleet Battle), in the same family as the chess scene
+ * (components/chess/three/ChessScene.ts).
  *
- * It owns what every tabletop game needs and nothing game-specific:
- *   - the WebGL renderer with the chess settings (ACES tone mapping, soft
- *     PCF shadows, pixel ratio capped at 2);
- *   - the dark room, the chess lights (warm key with shadows, low hemi +
- *     cool fill: contrast over brightness) and the same procedural wood table;
+ * It owns the plumbing every game needs and nothing game-specific:
+ *   - the WebGL renderer with the chess settings (ACES tone mapping, PCF
+ *     shadows, pixel ratio capped at 2);
+ *   - the game's ENVIRONMENT, supplied by the game (background, lighting rig,
+ *     ground): tableRoom() builds a room with a wood table (Four in a Row's
+ *     sunny room); Fleet Battle brings its own open sea;
  *   - a perspective camera the game frames in its onResize callback;
  *   - on-demand rendering: a frame is drawn only after invalidate(). The
  *     game's tick() reports whether something is still moving; while it is,
@@ -23,7 +24,9 @@
  *     redrawn only when something real moved or the game invalidated;
  *   - ownership tracking: geometries, materials and textures registered
  *     through own() are disposed with the stage;
- *   - pointer raycasting against arbitrary planes / objects.
+ *   - pointer raycasting against arbitrary planes / objects;
+ *   - WebGL context restore: a fresh frame once three.js has rebuilt its
+ *     GPU state (the board shows the SceneGuard notice while it is lost).
  *
  * Colors here are 3D art-asset values (wood, light tints), literal by design
  * like the chess scene; UI chrome around the canvas uses design tokens.
@@ -54,6 +57,104 @@ export const ROOM_COLOR = 0x1a120c;
 
 type Disposable = THREE.BufferGeometry | THREE.Material | THREE.Texture;
 
+/** What a game's environment hands back to the stage. */
+export interface StageRig {
+  /** The shadow-casting key light. */
+  key: THREE.DirectionalLight;
+  /**
+   * Fog for a camera this far from what it looks at (a room's back wall fades
+   * with the framing). Omit to leave the scene's fog as the environment set it.
+   */
+  fogForDistance?: (distance: number) => { near: number; far: number };
+}
+
+/** Builds a game's world around its board: background, lighting rig, ground. */
+export type StageEnvironment = (stage: TabletopStage) => StageRig;
+
+export interface KeyLightOptions {
+  color: number;
+  intensity: number;
+  position: [number, number, number];
+  /** Shadow map edge (px). */
+  mapSize?: number;
+  /** Half extent of the shadow camera (world units). */
+  extent?: number;
+  /** PCF blur radius in texels (bigger = softer edges). */
+  radius?: number;
+  /** 0..1 how dark the shadows get (1 = full). */
+  shadowIntensity?: number;
+}
+
+/** A directional key light with a shadow camera over the board. */
+export function makeKeyLight(o: KeyLightOptions): THREE.DirectionalLight {
+  const key = new THREE.DirectionalLight(o.color, o.intensity);
+  key.position.set(...o.position);
+  key.castShadow = true;
+  const size = o.mapSize ?? 1024;
+  key.shadow.mapSize.set(size, size);
+  const ext = o.extent ?? 7;
+  key.shadow.camera.left = -ext;
+  key.shadow.camera.right = ext;
+  key.shadow.camera.top = ext;
+  key.shadow.camera.bottom = -ext;
+  key.shadow.camera.near = 2;
+  key.shadow.camera.far = 40;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.02;
+  if (o.radius !== undefined) key.shadow.radius = o.radius;
+  if (o.shadowIntensity !== undefined) key.shadow.intensity = o.shadowIntensity;
+  return key;
+}
+
+export interface TableRoomOptions {
+  /** Background and fog color. */
+  room: number;
+  hemi: { sky: number; ground: number; intensity: number };
+  key: KeyLightOptions;
+  fill: { color: number; intensity: number; position: [number, number, number] } | null;
+  wood: { base: [number, number, number]; stripe: [number, number, number]; streak: [number, number, number]; seed: number; frequency: number };
+  roughness: number;
+}
+
+/** The chess room: dark walls, warm key, low hemi and a cool fill, walnut-brown table. */
+export const CHESS_ROOM: TableRoomOptions = {
+  room: ROOM_COLOR,
+  hemi: { sky: 0xfff4e0, ground: 0x3a281c, intensity: 0.3 },
+  key: { color: 0xfff1dd, intensity: 2.1, position: [5, 11, 6] },
+  fill: { color: 0xcdd8ff, intensity: 0.2, position: [-6, 7, -4] },
+  wood: { base: [122, 82, 46], stripe: [108, 73, 40], streak: [82, 53, 29], seed: 11, frequency: 0.09 },
+  roughness: 0.62,
+};
+
+/**
+ * A room with a big wood table (the plane y = 0): background + fog that fades
+ * the far table into the walls, a hemisphere fill, the key and an optional
+ * second light.
+ */
+export function tableRoom(o: TableRoomOptions = CHESS_ROOM): StageEnvironment {
+  return (stage) => {
+    const scene = stage.scene;
+    scene.background = new THREE.Color(o.room);
+    scene.fog = new THREE.Fog(o.room, 18, 42);
+    scene.add(new THREE.HemisphereLight(o.hemi.sky, o.hemi.ground, o.hemi.intensity));
+    const key = makeKeyLight(o.key);
+    scene.add(key, key.target);
+    if (o.fill) {
+      const fill = new THREE.DirectionalLight(o.fill.color, o.fill.intensity);
+      fill.position.set(...o.fill.position);
+      scene.add(fill);
+    }
+    const tableTex = stage.own(makeWoodTexture(o.wood));
+    tableTex.repeat.set(15, 15);
+    const tableMat = stage.own(new THREE.MeshStandardMaterial({ map: tableTex, roughness: o.roughness, metalness: 0.02 }));
+    const table = new THREE.Mesh(stage.own(new THREE.PlaneGeometry(200, 200)), tableMat);
+    table.rotation.x = -Math.PI / 2;
+    table.receiveShadow = true;
+    scene.add(table);
+    return { key, fogForDistance: (d) => ({ near: d + 6, far: d + 34 }) };
+  };
+}
+
 export interface StageTiming {
   /** Frames rendered since mount. */
   frames: number;
@@ -64,12 +165,8 @@ export interface StageTiming {
 }
 
 export interface TabletopStageOptions {
-  /** Shadow map edge (px). Chess uses 2048; the minigames get by on less. */
-  shadowMapSize?: number;
-  /** Half extent of the key light's shadow camera (world units). */
-  shadowExtent?: number;
-  /** Key light position. */
-  keyPosition?: [number, number, number];
+  /** The game's world: background, lights, ground (default: the chess room). */
+  environment?: StageEnvironment;
   /** Tone mapping exposure (chess: 1.05). */
   exposure?: number;
   /** Ambient tier rate in frames per second (default AMBIENT_FPS). */
@@ -97,6 +194,7 @@ export class TabletopStage {
   onResize: (aspect: number, width: number, height: number) => void = () => undefined;
 
   private readonly owned: Disposable[] = [];
+  private readonly fogForDistance: StageRig['fogForDistance'];
   private readonly ro: ResizeObserver;
   private readonly ray = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
@@ -149,50 +247,10 @@ export class TabletopStage {
     this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(ROOM_COLOR);
-    this.scene.fog = new THREE.Fog(ROOM_COLOR, 18, 42);
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 140);
-
-    // ── Lights: the chess rig ──
-    this.scene.add(new THREE.HemisphereLight(0xfff4e0, 0x3a281c, 0.3));
-    const key = new THREE.DirectionalLight(0xfff1dd, 2.1);
-    const [kx, ky, kz] = opts.keyPosition ?? [5, 11, 6];
-    key.position.set(kx, ky, kz);
-    key.castShadow = true;
-    const size = opts.shadowMapSize ?? 1024;
-    key.shadow.mapSize.set(size, size);
-    const ext = opts.shadowExtent ?? 7;
-    key.shadow.camera.left = -ext;
-    key.shadow.camera.right = ext;
-    key.shadow.camera.top = ext;
-    key.shadow.camera.bottom = -ext;
-    key.shadow.camera.near = 2;
-    key.shadow.camera.far = 40;
-    key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.02;
-    this.scene.add(key);
-    this.scene.add(key.target);
-    this.key = key;
-    const fill = new THREE.DirectionalLight(0xcdd8ff, 0.2);
-    fill.position.set(-6, 7, -4);
-    this.scene.add(fill);
-
-    // ── Table: same wood as the chess table ──
-    const tableTex = this.own(
-      makeWoodTexture({
-        base: [122, 82, 46],
-        stripe: [108, 73, 40],
-        streak: [82, 53, 29],
-        seed: 11,
-        frequency: 0.09,
-      }),
-    );
-    tableTex.repeat.set(15, 15);
-    const tableMat = this.own(new THREE.MeshStandardMaterial({ map: tableTex, roughness: 0.62, metalness: 0.02 }));
-    const table = new THREE.Mesh(this.own(new THREE.PlaneGeometry(200, 200)), tableMat);
-    table.rotation.x = -Math.PI / 2;
-    table.receiveShadow = true;
-    this.scene.add(table);
+    const rig = (opts.environment ?? tableRoom())(this);
+    this.key = rig.key;
+    this.fogForDistance = rig.fogForDistance;
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
@@ -286,9 +344,10 @@ export class TabletopStage {
     this.camera.lookAt(look);
     this.camera.updateProjectionMatrix();
     const fog = this.scene.fog as THREE.Fog | null;
-    if (fog) {
-      fog.near = distance + 6;
-      fog.far = distance + 34;
+    if (fog && this.fogForDistance) {
+      const f = this.fogForDistance(distance);
+      fog.near = f.near;
+      fog.far = f.far;
     }
   }
 

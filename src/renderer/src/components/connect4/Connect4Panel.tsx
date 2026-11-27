@@ -125,7 +125,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const result = game?.status === 'ended' && game.result ? resultCopy(game.result, game, name, t) : null;
 
   return (
-    <div className={hud.panel} aria-label={t('Four in a Row with {name}', { name })}>
+    <div className={`${hud.panel} ${hud.brightScene} ${hud.sunnyRoom}`} aria-label={t('Four in a Row with {name}', { name })}>
       <div className={hud.stage}>
         <div className={hud.boardFill}>
           <SceneBoundary key={characterId} onFail={() => setSceneFailed(true)}>

@@ -1,12 +1,14 @@
 /**
- * FleetScene — the 3D Fleet Battle table (three.js, no React).
+ * FleetScene — the 3D Fleet Battle sea (three.js, no React).
  *
- * Two walnut sea trays sit side by side on the chess table (shared
- * TabletopStage): the player's waters on the left with their toy fleet, the
- * companion's waters on the right. The water is one stylized animated surface
- * per tray (a patched MeshStandardMaterial: rolling color bands, soft crests,
- * crisp grid lines drawn in the shader), so the grid stays readable while it
- * moves, and ships still cast shadows onto it.
+ * Open water on a bright day (openSea.ts: the stage environment, the sea out
+ * to a horizon, sky, islands). The two 10x10 grids are areas marked on the
+ * water: the sea shader draws their cell lines and a lighter lagoon tint, a
+ * rope of yellow and white floats rings each one with striped buoys at the
+ * corners, and floating white markers carry the row letters and column
+ * numbers. The player's waters are on the left with their toy fleet, the
+ * companion's on the right. Ships float on the shared sea and cast shadows
+ * onto it.
  *
  * Shots are pegs, the same on both boards: white for a miss (with a splash
  * when it lands), red with a little flame and smoke for a hit (with a burst).
@@ -14,9 +16,9 @@
  * smoking; the companion's sunk ships are revealed the same way, so nothing
  * that was sunk ever disappears.
  *
- * During fleet setup the right tray is a wooden harbor: the five ships wait
- * in slots and are dragged (or clicked, or moved by keyboard) onto the left
- * tray; a ghost shows where a held ship would go, green when it fits.
+ * During fleet setup the right area is a wooden pier: the five ships wait in
+ * its berths and are dragged (or clicked, or moved by keyboard) onto the left
+ * area; a ghost shows where a held ship would go, green when it fits.
  *
  * Driven imperatively by FleetBoard3D.tsx; rendering is on demand plus the
  * stage's throttled, self-sleeping ambient tier for the water and flames.
@@ -33,8 +35,9 @@ import {
   type BATTLESHIPShipName,
 } from '@shared/battleshipIpc';
 import { makeWoodTexture } from '../../chess/three/woodTexture';
-import { TabletopStage, applyLift, easeOut, easeOutBack, endFraming, smooth } from '../../tabletop/TabletopStage';
+import { TabletopStage, easeOut, easeOutBack, endFraming, smooth } from '../../tabletop/TabletopStage';
 import { roundedRect } from '../../connect4/three/Connect4Scene';
+import { HORIZON_FRAC, OpenSea, SEA_LEVEL, openSeaEnvironment } from './openSea';
 import { DECK_Y, ENEMY_PALETTE, PLAYER_PALETTE, ShipLibrary } from './shipGeometry';
 import { ROW_LETTERS, type GridPos } from '../fleetUtil';
 
@@ -62,24 +65,31 @@ export type FleetPick =
 
 // ── Layout ──────────────────────────────────────────────────────────────────
 const N = 10;
+/** Centre of each sea area along x (player left, companion right). */
 const TRAY_X = 6.35;
-const RIM = 0.78;
+/** Margin around an area that its rope, buoys and markers take. */
+const RIM = 1.0;
 const TRAY_HALF = N / 2 + RIM;
-const BASE_TOP = 0.24;
-const RIM_TOP = 0.44;
-const WATER_Y = 0.33;
-const DOCK_TOP = 0.3;
-const DOCK_HALF_X = 3.6;
-const DOCK_HALF_Z = 5.6;
+const WATER_Y = SEA_LEVEL;
+/** Rope ring around an area, and the marker line just outside it. */
+const ROPE = N / 2 + 0.2;
+const MARK = N / 2 + 0.68;
+/** Pier deck height; harbor ships float in its berths at the waterline. */
+const PIER_TOP = WATER_Y + 0.3;
+/** Camera: field of view and elevation (degrees). Low enough to look out to sea, steep enough for readable grids. */
+const FOV = 42;
+const ELEVATION = 45;
 const DOCK_LEFT = TRAY_X - 3.15;
 const DOCK_ROW_Z = [-4.2, -2.1, 0, 2.1, 4.2];
 const DRAFT = 0.02; // ships float this far above their waterline origin
 
 // Art palette.
-const C_DEEP = 0x1c5a73;
-const C_SHALLOW = 0x3f9db2;
-const C_LINE = 0xe4f6f8;
 const C_FOAM = 0xeafcff;
+const C_FLOAT = 0xffc83d;
+const C_FLOAT_ALT = 0xfbfaf4;
+const C_ROPE = 0xf1e7cf;
+const C_BUOY = 0xff6f4d;
+const C_MARK_INK = '#1d3557';
 const C_PEG_MISS = 0xf3efe6;
 const C_PEG_HIT = 0xe0453a;
 const C_FLAME = 0xff7a2a;
@@ -87,7 +97,7 @@ const C_FLAME_CORE = 0xffd86b;
 const C_SMOKE = 0x8a837c;
 const C_RETICLE = 0xffe3a3;
 const C_AIM = 0xff8a7a;
-const C_SLICK = 0x0b2531;
+const C_SLICK = 0x0e3a4c;
 
 /**
  * How a sunk ship lies. Most list to one side and settle low. A vertical
@@ -148,7 +158,7 @@ function hash(r: number, c: number, salt = 0): number {
 export class FleetScene {
   private readonly stage: TabletopStage;
   private readonly ships: ShipLibrary;
-  private readonly waterTime = { value: 0 };
+  private readonly sea: OpenSea;
 
   private readonly enemyTray = new THREE.Group();
   private readonly dock = new THREE.Group();
@@ -192,7 +202,7 @@ export class FleetScene {
   private viewH = 1;
   /** endShift value the camera last showed; the tick re-frames until it lands. */
   private shiftShown = 0;
-  /** 0..1: the game is over, the trays slide up to make room for the result. */
+  /** 0..1: the game is over, the areas slide up to make room for the result. */
   private endShift = { from: 0, to: 0, start: -Infinity };
   private fx: Fx[] = [];
   private flickers: Flicker[] = [];
@@ -207,117 +217,34 @@ export class FleetScene {
 
   constructor(container: HTMLElement) {
     this.stage = new TabletopStage(container, {
-      shadowMapSize: 2048,
+      environment: openSeaEnvironment,
+      exposure: 1.0,
       // Water, bob and flames read fine at 15 fps, and the scene redraw is the cost.
       ambientFps: 15,
       ambientSleepMs: 15_000,
-      shadowExtent: 13,
-      keyPosition: [6, 14, 9],
     });
+    this.stage.camera.fov = FOV;
     const own = this.stage.own.bind(this.stage);
     const scene = this.stage.scene;
     this.ships = new ShipLibrary();
 
-    // ── Trays ──
-    const walnut = own(
-      makeWoodTexture({ base: [82, 50, 27], stripe: [58, 33, 17], streak: [40, 22, 11], seed: 29, frequency: 0.06 }),
-    );
-    walnut.repeat.set(0.12, 0.12);
-    const walnutMat = own(new THREE.MeshStandardMaterial({ map: walnut, roughness: 0.5, metalness: 0.02 }));
-    const baseGeo = own(new THREE.BoxGeometry(TRAY_HALF * 2, BASE_TOP, TRAY_HALF * 2));
-    const rimShape = roundedRect(-TRAY_HALF, -TRAY_HALF, TRAY_HALF * 2, TRAY_HALF * 2, 0.35);
-    const hole = new THREE.Path();
-    hole.moveTo(-N / 2, -N / 2);
-    hole.lineTo(N / 2, -N / 2);
-    hole.lineTo(N / 2, N / 2);
-    hole.lineTo(-N / 2, N / 2);
-    hole.lineTo(-N / 2, -N / 2);
-    rimShape.holes.push(hole);
-    const rimGeo = own(
-      new THREE.ExtrudeGeometry(rimShape, {
-        depth: RIM_TOP - BASE_TOP - 0.06,
-        bevelEnabled: true,
-        bevelThickness: 0.03,
-        bevelSize: 0.03,
-        bevelSegments: 2,
-        curveSegments: 8,
-      }),
-    );
-    rimGeo.rotateX(-Math.PI / 2);
-    rimGeo.translate(0, BASE_TOP + 0.03, 0);
-    const waterGeo = own(new THREE.PlaneGeometry(N, N, 1, 1));
-    const coordTex = own(this.makeCoordTexture());
-    const coordMat = own(new THREE.MeshBasicMaterial({ map: coordTex, transparent: true, depthWrite: false }));
-    const coordGeo = own(new THREE.PlaneGeometry(TRAY_HALF * 2, TRAY_HALF * 2));
-
-    const makeTray = (x: number, parent: THREE.Object3D): void => {
-      const base = new THREE.Mesh(baseGeo, walnutMat);
-      base.position.set(x, BASE_TOP / 2, 0);
-      base.receiveShadow = true;
-      base.castShadow = true;
-      const rim = new THREE.Mesh(rimGeo, walnutMat);
-      rim.position.x = x;
-      rim.castShadow = true;
-      rim.receiveShadow = true;
-      const water = new THREE.Mesh(waterGeo, this.makeWaterMaterial());
-      water.rotation.x = -Math.PI / 2;
-      water.position.set(x, WATER_Y, 0);
-      water.receiveShadow = true;
-      const coords = new THREE.Mesh(coordGeo, coordMat);
-      coords.rotation.x = -Math.PI / 2;
-      coords.position.set(x, RIM_TOP + 0.004, 0);
-      parent.add(base, rim, water, coords);
-    };
-    makeTray(-TRAY_X, scene);
-    makeTray(TRAY_X, this.enemyTray);
+    // ── The sea, and the two areas marked on it ──
+    this.sea = new OpenSea(this.stage, [
+      { x: -TRAY_X, z: 0, half: N / 2 },
+      { x: TRAY_X, z: 0, half: N / 2 },
+    ]);
+    this.buildAreaMarks(-TRAY_X, scene);
+    this.buildAreaMarks(TRAY_X, this.enemyTray);
     scene.add(this.enemyTray);
 
-    // ── Harbor (fleet setup): a light wood board with five slots ──
-    const maple = own(
-      makeWoodTexture({ base: [168, 122, 76], stripe: [146, 104, 62], streak: [118, 82, 46], seed: 53, frequency: 0.08 }),
-    );
-    maple.repeat.set(0.16, 0.16);
-    const mapleMat = own(new THREE.MeshStandardMaterial({ map: maple, roughness: 0.55, metalness: 0.02 }));
-    const dockShape = roundedRect(-DOCK_HALF_X, -DOCK_HALF_Z, DOCK_HALF_X * 2, DOCK_HALF_Z * 2, 0.35);
-    const dockGeo = own(
-      new THREE.ExtrudeGeometry(dockShape, {
-        depth: DOCK_TOP - 0.06,
-        bevelEnabled: true,
-        bevelThickness: 0.03,
-        bevelSize: 0.03,
-        bevelSegments: 2,
-        curveSegments: 8,
-      }),
-    );
-    dockGeo.rotateX(-Math.PI / 2);
-    dockGeo.translate(0, 0.03, 0);
-    const dockBoard = new THREE.Mesh(dockGeo, mapleMat);
-    dockBoard.position.x = TRAY_X;
-    dockBoard.castShadow = true;
-    dockBoard.receiveShadow = true;
-    this.dock.add(dockBoard);
-    // Each slot: a pale routed lip around a dark recess, a little larger than
-    // the ship so it still reads with the ship sitting in it.
-    const slotMat = own(new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.85 }));
-    const lipMat = own(new THREE.MeshStandardMaterial({ color: 0xe2c193, roughness: 0.6 }));
+    // ── Harbor (fleet setup): a wooden pier with five berths ──
+    this.buildPier();
     this.matDockShip = this.ships.material;
     for (let i = 0; i < BATTLESHIP_SHIP_NAMES.length; i++) {
       const name = BATTLESHIP_SHIP_NAMES[i];
       const size = SHIP_SIZES[name];
-      const lipGeo = own(new THREE.ShapeGeometry(roundedRect(-0.24, -0.6, size + 0.48, 1.2, 0.42), 6));
-      const lip = new THREE.Mesh(lipGeo, lipMat);
-      lip.rotation.x = -Math.PI / 2;
-      lip.position.set(DOCK_LEFT, DOCK_TOP + 0.002, DOCK_ROW_Z[i]);
-      lip.receiveShadow = true;
-      this.dock.add(lip);
-      const slotGeo = own(new THREE.ShapeGeometry(roundedRect(-0.16, -0.52, size + 0.32, 1.04, 0.36), 6));
-      const slot = new THREE.Mesh(slotGeo, slotMat);
-      slot.rotation.x = -Math.PI / 2;
-      slot.position.set(DOCK_LEFT, DOCK_TOP + 0.004, DOCK_ROW_Z[i]);
-      slot.receiveShadow = true;
-      this.dock.add(slot);
       const ship = new THREE.Mesh(this.ships.geometry(name, PLAYER_PALETTE), this.matDockShip);
-      ship.position.set(DOCK_LEFT + size / 2, DOCK_TOP + 0.13, DOCK_ROW_Z[i]);
+      ship.position.set(DOCK_LEFT + size / 2, WATER_Y + DRAFT, DOCK_ROW_Z[i]);
       ship.castShadow = true;
       ship.receiveShadow = true;
       this.dock.add(ship);
@@ -488,7 +415,7 @@ export class FleetScene {
   /** What is under the pointer: a board cell, a harbor ship, or nothing. */
   pick(clientX: number, clientY: number): FleetPick {
     if (this.phase === 'placing') {
-      const dockHit = this.stage.pointerOnPlane(clientX, clientY, new THREE.Plane(new THREE.Vector3(0, 1, 0), -(DOCK_TOP + 0.15)));
+      const dockHit = this.stage.pointerOnPlane(clientX, clientY, new THREE.Plane(new THREE.Vector3(0, 1, 0), -(WATER_Y + 0.15)));
       if (dockHit) {
         for (let i = 0; i < BATTLESHIP_SHIP_NAMES.length; i++) {
           const name = BATTLESHIP_SHIP_NAMES[i];
@@ -540,13 +467,13 @@ export class FleetScene {
     enemy: { x: number; y: number };
     dock: Array<{ name: BATTLESHIPShipName; x: number; y: number }>;
   } {
-    const rim = (x: number): { x: number; y: number } => this.stage.project(new THREE.Vector3(x, RIM_TOP, N / 2 + RIM / 2));
+    const rim = (x: number): { x: number; y: number } => this.stage.project(new THREE.Vector3(x, WATER_Y, ROPE + 0.62));
     return {
       player: rim(-TRAY_X - 2),
       enemy: rim(TRAY_X + 2),
       dock: BATTLESHIP_SHIP_NAMES.map((name, i) => ({
         name,
-        ...this.stage.project(new THREE.Vector3(DOCK_LEFT + SHIP_SIZES[name] + 0.3, DOCK_TOP, DOCK_ROW_Z[i])),
+        ...this.stage.project(new THREE.Vector3(DOCK_LEFT + SHIP_SIZES[name] + 0.3, WATER_Y, DOCK_ROW_Z[i])),
       })),
     };
   }
@@ -671,7 +598,7 @@ export class FleetScene {
     this.applyPhasePose(performance.now());
   }
 
-  /** Harbor and enemy tray swap: the incoming one rises from the table. */
+  /** Pier and companion's area swap: the incoming one rises out of the water. */
   private applyPhasePose(now: number): boolean {
     const t = THREE.MathUtils.clamp((now - this.phaseStart) / 650, 0, 1);
     const e = easeOut(t);
@@ -680,6 +607,8 @@ export class FleetScene {
     this.enemyTray.visible = !showDock;
     const incoming = showDock ? this.dock : this.enemyTray;
     incoming.position.y = -0.8 * (1 - e);
+    // The companion's area is drawn on the water too: it fades in with its floats.
+    this.sea.setPatchStrength(1, showDock ? 0 : e);
     return t < 1;
   }
 
@@ -855,7 +784,7 @@ export class FleetScene {
 
   // ── Animation ──────────────────────────────────────────────────────────────
 
-  /** Game over: ease the trays up so the result card clears the grids. */
+  /** Game over: ease the areas up so the result card clears the grids. */
   setEnded(ended: boolean): void {
     const to = ended ? 1 : 0;
     if (this.endShift.to === to) return;
@@ -878,51 +807,85 @@ export class FleetScene {
   }
 
   /**
-   * Where the trays sit in the panel height (0 top, 1 bottom) with the camera
-   * at rest: the far rims (column numbers) to the near outer edges. Measured,
-   * not assumed, because a narrow window is width-bound and the trays then
-   * fill more of the height than in a wide one.
+   * Where the areas sit in the panel with the camera at rest: height from the
+   * far markers to the near rope (0 top, 1 bottom) and the widest NDC x (the
+   * near corners). Measured, not assumed: at this angle perspective makes the
+   * fit non-linear, and a narrow window is width-bound.
    */
-  private restExtent(look: THREE.Vector3, elev: number, d: number): { top: number; bottom: number } {
+  private restExtent(look: THREE.Vector3, elev: number, d: number): { top: number; bottom: number; side: number } {
     const cam = this.stage.camera;
     this.stage.placeCamera(look, elev, d);
     if (cam.view) cam.clearViewOffset();
     cam.updateMatrixWorld();
-    const x = TRAY_X + TRAY_HALF;
+    // What actually sticks out on the open water: the letter markers on the
+    // left, the corner buoys, the number markers on the far side and the
+    // area label under the near rope.
+    const letters = TRAY_X + MARK + 0.36;
+    const buoys = TRAY_X + ROPE + 0.25;
+    const buoyTop = WATER_Y + 0.55;
     let top = 1;
     let bottom = 0;
+    let side = 0;
     const v = new THREE.Vector3();
     for (const [px, py, pz] of [
-      [-x, RIM_TOP, -TRAY_HALF],
-      [x, RIM_TOP, -TRAY_HALF],
-      [-x, 0, TRAY_HALF],
-      [x, 0, TRAY_HALF],
+      [-letters, WATER_Y, -(MARK + 0.36)],
+      [-buoys, buoyTop, -ROPE],
+      [buoys, buoyTop, -ROPE],
+      [-letters, WATER_Y, N / 2 - 0.5],
+      [-buoys, buoyTop, ROPE + 0.25],
+      [buoys, buoyTop, ROPE + 0.25],
+      [0, WATER_Y, ROPE + 1.0],
     ] as const) {
-      const fy = (1 - v.set(px, py, pz).project(cam).y) / 2;
+      v.set(px, py, pz).project(cam);
+      const fy = (1 - v.y) / 2;
       top = Math.min(top, fy);
       bottom = Math.max(bottom, fy);
+      side = Math.max(side, Math.abs(v.x));
     }
-    return { top, bottom };
+    return { top, bottom, side };
   }
 
   private applyCamera(now: number): boolean {
-    const aspect = this.aspect;
-    const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.stage.camera.fov / 2));
-    const elev = THREE.MathUtils.degToRad(57);
-    // Horizontal: both trays edge to edge; vertical: the tray depth plus room
-    // for the turn line and the board labels above the far rims.
-    const horizontal = (TRAY_X + TRAY_HALF + 0.3) / (tanHalf * aspect);
-    const vertical = 6.1 / tanHalf;
-    // Game over: pull back and slide up so row J clears the result card.
+    const cam = this.stage.camera;
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    const elev = THREE.MathUtils.degToRad(ELEVATION);
+    const look = new THREE.Vector3(0, 0, 0.6);
+    // Both areas edge to edge, then pull back until they fit the room below
+    // the sky band (the turn line sits on the sky).
+    const top0 = HORIZON_FRAC + 0.035;
+    const bottom0 = 0.975;
+    const room = bottom0 - top0;
+    let d = (TRAY_X + TRAY_HALF + 0.3) / (tanHalf * this.aspect);
+    // The near corners are the widest part of the view at this angle, and
+    // perspective makes the fit non-linear in d: bisect for the closest
+    // distance where both the height and the width fit.
+    const sideRoom = 0.97;
+    const fits = (e: { top: number; bottom: number; side: number }): boolean =>
+      e.bottom - e.top <= room && e.side <= sideRoom;
+    let lo = d * 0.5;
+    let hi = d * 4;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(this.restExtent(look, elev, mid))) hi = mid;
+      else lo = mid;
+    }
+    d = hi;
+    const ext = this.restExtent(look, elev, d);
+    // Slide the picture down (a lens shift, so the camera keeps its angle)
+    // to open the sky band; spare height goes mostly above the areas (more open sea).
+    const span = ext.bottom - ext.top;
+    const skyPx = (top0 + Math.max(0, room - span) * 0.7 - ext.top) * this.viewH;
+    // Game over: pull back and slide up so row J clears the result card. The
+    // sky shift hands over to the lift as the tween runs.
     const shift = this.endShiftAt(now);
     this.shiftShown = shift;
-    const look = new THREE.Vector3(0, 0, 0.75);
-    const rest = Math.max(horizontal, vertical);
-    const ext = shift > 0 ? this.restExtent(look, elev, rest) : { top: 0, bottom: 1 };
     const end = endFraming(this.viewH, ext.top, ext.bottom, shift);
-    const d = rest * end.k;
-    this.stage.placeCamera(look, elev, d);
-    applyLift(this.stage.camera, this.viewW, this.viewH, end.liftPx);
+    this.stage.placeCamera(look, elev, d * end.k);
+    const offY = end.liftPx - skyPx * (1 - shift);
+    if (Math.abs(offY) > 0.5) cam.setViewOffset(this.viewW, this.viewH, 0, offY, this.viewW, this.viewH);
+    else if (cam.view) cam.clearViewOffset();
+    // The horizon, haze and sky follow the framing; the haze starts past the far markers.
+    this.sea.layout(this.viewH, this.viewW, -TRAY_HALF - 0.5, -TRAY_HALF - 2);
     this.stage.invalidate();
     return now - this.endShift.start < 700;
   }
@@ -1000,7 +963,7 @@ export class FleetScene {
     // Held harbor ship floats up.
     for (const [name, mesh] of this.dockShips) {
       const i = BATTLESHIP_SHIP_NAMES.indexOf(name);
-      const want = DOCK_TOP + 0.13 + (this.heldDock === name ? 0.28 : 0);
+      const want = WATER_Y + DRAFT + (this.heldDock === name ? 0.28 : 0);
       const k = this.stage.reducedMotion ? 1 : 0.25;
       mesh.position.y += (want - mesh.position.y) * k;
       if (Math.abs(want - mesh.position.y) > 0.002) moving = true;
@@ -1034,7 +997,7 @@ export class FleetScene {
 
   /** Throttled ambient tier: water, bobbing ships, flames, smoke, the aim. */
   private ambientTick(now: number, dt: number): boolean {
-    this.waterTime.value += dt / 1000;
+    this.sea.time.value += dt / 1000;
     for (const ent of this.shipMap.values()) this.shipPose(ent, now, true);
     this.poseFlickers(now);
     const th = this.thinking;
@@ -1058,85 +1021,180 @@ export class FleetScene {
 
   // ── Materials and textures ─────────────────────────────────────────────────
 
-  /** Stylized water: color bands, soft crests and shader-drawn grid lines. */
-  private makeWaterMaterial(): THREE.MeshStandardMaterial {
-    const mat = this.stage.own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0.0 }));
-    const uniforms = {
-      uTime: this.waterTime,
-      uDeep: { value: new THREE.Color(C_DEEP) },
-      uShallow: { value: new THREE.Color(C_SHALLOW) },
-      uLine: { value: new THREE.Color(C_LINE) },
-      uFoam: { value: new THREE.Color(C_FOAM) },
-    };
-    mat.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, uniforms);
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 vGridUv;')
-        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvGridUv = uv;');
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-varying vec2 vGridUv;
-uniform float uTime;
-uniform vec3 uDeep;
-uniform vec3 uShallow;
-uniform vec3 uLine;
-uniform vec3 uFoam;`,
-        )
-        .replace(
-          '#include <color_fragment>',
-          `#include <color_fragment>
-{
-  vec2 g = vGridUv * 10.0;
-  float t = uTime;
-  float w1 = sin(g.x * 0.9 + t * 0.55 + sin(g.y * 0.6 + t * 0.3) * 1.4);
-  float w2 = sin(g.y * 1.15 - t * 0.45 + sin(g.x * 0.7 - t * 0.25) * 1.2);
-  float w = 0.5 + 0.25 * (w1 + w2);
-  vec3 col = mix(uDeep, uShallow, 0.25 + 0.55 * w);
-  float band = sin(g.x * 1.1 + g.y * 2.3 + t * 0.9 + w1 * 1.3);
-  col = mix(col, uFoam, smoothstep(0.96, 1.0, band) * 0.1 * (0.5 + 0.5 * w2));
-  float chk = mod(floor(g.x) + floor(g.y), 2.0);
-  col *= 1.0 - chk * 0.045;
-  vec2 f = abs(fract(g) - 0.5);
-  vec2 fw = fwidth(g);
-  vec2 l = smoothstep(0.5 - fw * 1.6, 0.5 - fw * 0.3, f);
-  float line = max(l.x, l.y);
-  col = mix(col, uLine, line * 0.5);
-  vec2 e = min(vGridUv, 1.0 - vGridUv) * 10.0;
-  col *= mix(0.72, 1.0, smoothstep(0.0, 0.7, min(e.x, e.y)));
-  diffuseColor.rgb = col;
-}`,
-        );
-    };
-    mat.customProgramCacheKey = () => 'fleet-water-v2';
-    return mat;
+  /**
+   * One area's marks on the water: a rope ring of yellow and white floats,
+   * striped buoys at the corners, and white floating markers with the row
+   * letters (left) and column numbers (far side).
+   */
+  private buildAreaMarks(x: number, parent: THREE.Object3D): void {
+    const m = this.marks ?? (this.marks = this.makeMarkResources());
+
+    const rope = new THREE.Group();
+    for (const [rx, rz, len, along] of [
+      [0, -ROPE, ROPE * 2, 'x'],
+      [0, ROPE, ROPE * 2, 'x'],
+      [-ROPE, 0, ROPE * 2, 'z'],
+      [ROPE, 0, ROPE * 2, 'z'],
+    ] as const) {
+      const r = new THREE.Mesh(m.ropeGeo, m.ropeMat);
+      r.scale.set(len, 1, 1);
+      if (along === 'z') r.rotation.y = Math.PI / 2;
+      r.position.set(x + rx, WATER_Y + 0.05, rz);
+      rope.add(r);
+    }
+    parent.add(rope);
+
+    // Floats every ~0.42 along the ring, alternating colors.
+    const per = 25;
+    const floats = new THREE.InstancedMesh(m.floatGeo, m.floatMat, per * 4);
+    const mtx = new THREE.Matrix4();
+    const col = new THREE.Color();
+    let k = 0;
+    for (let side = 0; side < 4; side++) {
+      for (let i = 0; i < per; i++) {
+        const t = -ROPE + (i / per) * ROPE * 2;
+        const [fx, fz] = side === 0 ? [t, -ROPE] : side === 1 ? [ROPE, t] : side === 2 ? [-t, ROPE] : [-ROPE, -t];
+        mtx.makeTranslation(x + fx, WATER_Y + 0.05, fz);
+        floats.setMatrixAt(k, mtx);
+        floats.setColorAt(k, col.setHex(k % 2 ? C_FLOAT_ALT : C_FLOAT));
+        k++;
+      }
+    }
+    floats.castShadow = true;
+    parent.add(floats);
+
+    // Corner buoys.
+    for (const [bx, bz] of [
+      [-ROPE, -ROPE],
+      [ROPE, -ROPE],
+      [-ROPE, ROPE],
+      [ROPE, ROPE],
+    ]) {
+      const b = new THREE.Group();
+      b.position.set(x + bx, WATER_Y, bz);
+      const body = new THREE.Mesh(m.buoyGeo, m.buoyMat);
+      const band = new THREE.Mesh(m.bandGeo, m.bandMat);
+      body.castShadow = true;
+      b.add(body, band);
+      parent.add(b);
+    }
+
+    // Floating markers: white discs, letters and numbers on a shared texture.
+    const discs = new THREE.InstancedMesh(m.markGeo, m.markMat, N * 2);
+    for (let i = 0; i < N; i++) {
+      const at = i - N / 2 + 0.5;
+      discs.setMatrixAt(i, mtx.makeTranslation(x + at, WATER_Y + 0.04, -MARK));
+      discs.setMatrixAt(N + i, mtx.makeTranslation(x - MARK, WATER_Y + 0.04, at));
+    }
+    discs.receiveShadow = true;
+    parent.add(discs);
+    const labels = new THREE.Mesh(m.labelGeo, m.labelMat);
+    labels.rotation.x = -Math.PI / 2;
+    labels.position.set(x, WATER_Y + 0.091, 0);
+    parent.add(labels);
   }
 
-  /** Row letters on the left rim, column numbers on the far rim. */
-  private makeCoordTexture(): THREE.CanvasTexture {
+  private marks: ReturnType<FleetScene['makeMarkResources']> | null = null;
+
+  private makeMarkResources() {
+    const own = this.stage.own.bind(this.stage);
+    const ropeGeo = own(new THREE.BoxGeometry(1, 0.035, 0.035));
+    const floatGeo = own(new THREE.SphereGeometry(0.11, 10, 6));
+    floatGeo.scale(1, 0.72, 1);
+    const buoyGeo = own(
+      new THREE.LatheGeometry(
+        [
+          [0, -0.2],
+          [0.2, -0.2],
+          [0.22, 0.05],
+          [0.17, 0.32],
+          [0.07, 0.5],
+          [0, 0.53],
+        ].map(([a, b]) => new THREE.Vector2(a, b)),
+        12,
+      ),
+    );
+    const bandGeo = own(new THREE.CylinderGeometry(0.205, 0.215, 0.1, 12, 1, true));
+    bandGeo.translate(0, 0.16, 0);
+    const markGeo = own(new THREE.CylinderGeometry(0.33, 0.35, 0.1, 18));
+    const labelGeo = own(new THREE.PlaneGeometry(TRAY_HALF * 2, TRAY_HALF * 2));
+    const labelTex = own(this.makeMarkerTexture());
+    return {
+      ropeGeo,
+      ropeMat: own(new THREE.MeshStandardMaterial({ color: C_ROPE, roughness: 0.9 })),
+      floatGeo,
+      floatMat: own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45 })),
+      buoyGeo,
+      buoyMat: own(new THREE.MeshStandardMaterial({ color: C_BUOY, roughness: 0.5 })),
+      bandGeo,
+      bandMat: own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, side: THREE.DoubleSide })),
+      markGeo,
+      markMat: own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 })),
+      labelGeo,
+      labelMat: own(new THREE.MeshBasicMaterial({ map: labelTex, transparent: true, depthWrite: false, toneMapped: false })),
+    };
+  }
+
+  /** Letters and numbers that sit on the floating markers (one texture, both areas). */
+  private makeMarkerTexture(): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       const size = canvas.width;
-      ctx.fillStyle = 'rgba(238, 224, 192, 0.82)';
-      ctx.font = `600 ${Math.round(size * 0.034)}px ui-monospace, Menlo, monospace`;
+      ctx.fillStyle = C_MARK_INK;
+      ctx.font = `700 ${Math.round(size * 0.042)}px ui-sans-serif, system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const toU = (x: number): number => ((x + TRAY_HALF) / (TRAY_HALF * 2)) * size;
-      const rimMid = N / 2 + RIM / 2;
+      const toU = (v: number): number => ((v + TRAY_HALF) / (TRAY_HALF * 2)) * size;
       for (let i = 0; i < N; i++) {
         const at = i - N / 2 + 0.5;
-        ctx.fillText(String(i + 1), toU(at), toU(-rimMid));
-        ctx.fillText(ROW_LETTERS[i], toU(-rimMid), toU(at));
+        ctx.fillText(String(i + 1), toU(at), toU(-MARK) + 1);
+        ctx.fillText(ROW_LETTERS[i], toU(-MARK), toU(at) + 1);
       }
     }
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;
     return tex;
+  }
+
+  /** The setup harbor: a plank walkway on pilings with finger piers between five berths. */
+  private buildPier(): void {
+    const own = this.stage.own.bind(this.stage);
+    const planks = own(
+      makeWoodTexture({ base: [214, 178, 132], stripe: [196, 158, 112], streak: [168, 130, 88], seed: 53, frequency: 0.08 }),
+    );
+    planks.repeat.set(0.3, 0.3);
+    const deckMat = own(new THREE.MeshStandardMaterial({ map: planks, roughness: 0.7 }));
+    const postMat = own(new THREE.MeshStandardMaterial({ color: 0x8a5a36, roughness: 0.8 }));
+    const deckT = 0.14;
+    const walkX = DOCK_LEFT + 7.9;
+    const walk = new THREE.Mesh(own(new THREE.BoxGeometry(1.3, deckT, ROPE * 2 + 0.4)), deckMat);
+    walk.position.set(walkX, PIER_TOP - deckT / 2, 0);
+    walk.castShadow = true;
+    walk.receiveShadow = true;
+    this.dock.add(walk);
+    const fingerLen = walkX - 0.65 - (DOCK_LEFT - 0.45);
+    const fingerGeo = own(new THREE.BoxGeometry(fingerLen, deckT * 0.8, 0.3));
+    const fingerZ = [-5.25, -3.15, -1.05, 1.05, 3.15, 5.25];
+    const posts: Array<[number, number]> = [];
+    for (const z of fingerZ) {
+      const f = new THREE.Mesh(fingerGeo, deckMat);
+      f.position.set(DOCK_LEFT - 0.45 + fingerLen / 2, PIER_TOP - deckT * 0.45, z);
+      f.castShadow = true;
+      f.receiveShadow = true;
+      this.dock.add(f);
+      posts.push([DOCK_LEFT - 0.35, z]);
+    }
+    for (let z = -ROPE; z <= ROPE + 0.01; z += (ROPE * 2) / 5) posts.push([walkX + 0.55, z]);
+    const postGeo = own(new THREE.CylinderGeometry(0.1, 0.11, 1.1, 8));
+    const pilings = new THREE.InstancedMesh(postGeo, postMat, posts.length);
+    const mtx = new THREE.Matrix4();
+    posts.forEach(([px, pz], i) => pilings.setMatrixAt(i, mtx.makeTranslation(px, PIER_TOP - 0.45, pz)));
+    pilings.castShadow = true;
+    this.dock.add(pilings);
   }
 }
 
