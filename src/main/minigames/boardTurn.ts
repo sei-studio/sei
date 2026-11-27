@@ -306,7 +306,10 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
   const messages: LlmMessage[] = toMessages(buildGameThread(history, a.gameLog, a.unansweredIds));
   const endsOnUser = messages.length > 0 && messages[messages.length - 1].role === 'user';
   markLastMessageCached(endsOnUser ? messages.slice(0, -1) : messages);
-  foldUserNote(messages, a.turnBlock);
+  // "(game)" like the move log: with the player's line moved right before
+  // it, a bare board read as something the player pasted ("the board you
+  // pasted doesn't match", 261128 eval re-run).
+  foldUserNote(messages, `(game) ${a.turnBlock}`);
 
   const llm = a.provider ?? (await buildLlmProvider());
   const budget = attemptBudgetMs(llm);
