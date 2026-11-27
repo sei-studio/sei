@@ -587,13 +587,16 @@ describe('Fleet Battle prompt facts', () => {
         { by: 'player', row: 5, col: 4, hit: true, sunkShip: 'battleship' },
       ],
       turn: 'ai',
+      theirOpenHits: ['E5'],
     });
+    expect(text).toContain("Ren's open hits on your board, ships not sunk yet: E5.");
     expect(text).toContain("Your ships Ren has sunk: 1 (battleship). Ren's ships you have sunk: 1 (destroyer).");
     expect(text).toContain("Ren's last shots, on your board, newest first: F5 (sank your battleship), E5 (hit).");
     expect(text).toContain("Your last shots, on Ren's board, newest first: B3 (sank Ren's destroyer), B2 (hit).");
     expect(text).toContain('Next shot: yours.');
     expect(text).toContain('"you" is Ren and "my" is yours');
-    const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player' });
+    const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
+    expect(none).toContain("Ren's open hits on your board, ships not sunk yet: none.");
     expect(none).toContain("Your ships Ren has sunk: none. Ren's ships you have sunk: none.");
     expect(none).toContain("Ren's last shots, on your board, newest first: none yet.");
     expect(none).toContain("Next shot: Ren's.");
@@ -638,6 +641,19 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(block).toContain("Your ships Player has sunk: none. Player's ships you have sunk: none.");
     expect(block).toContain("Next shot: Player's.");
     expect(block).toContain('They just said to you: \\"where are your ships?\\"');
+  });
+
+  it("chat facts carry the player's open hits on its board", async () => {
+    await startBattle();
+    await playerMove(CHAR, 0, 0); // A1: its carrier
+    await waitFor(() => state().turn === 'player' && !state().aiThinking);
+    calls = [];
+    reply = () => ({ content: [text('lucky')] });
+    await handlePlayerChat({ characterId: CHAR, text: 'where next?' });
+    const block = lastUserText(calls[0]);
+    expect(block).toContain("Player's open hits on your board, ships not sunk yet: A1.");
+    expect(block).toContain("Player's last shots, on your board, newest first: A1 (hit).");
+    expect(block).toContain("Your last shots, on Player's board, newest first: J10 (miss).");
   });
 
   it('a line sent while its shot runs is quoted and placed after the shot and the line it said', async () => {

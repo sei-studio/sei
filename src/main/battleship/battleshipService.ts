@@ -1153,6 +1153,8 @@ export function chatFactsText(f: {
   yourShips: ReadonlyArray<BATTLESHIPShip>;
   history: ReadonlyArray<BATTLESHIPShotRecord>;
   turn: 'player' | 'ai';
+  /** The player's hits on its board whose ship is still afloat. */
+  theirOpenHits: ReadonlyArray<string>;
 }): string {
   const P = f.player;
   const sunk = (ships: ReadonlyArray<BATTLESHIPShip>): string => {
@@ -1168,9 +1170,10 @@ export function chatFactsText(f: {
     `Your ships ${P} has sunk: ${sunk(f.yourShips)}. ${P}'s ships you have sunk: ${sunk(f.theirShips)}.`,
     `${P}'s last shots, on your board, newest first: ${last('player', 'your')}.`,
     `Your last shots, on ${P}'s board, newest first: ${last('ai', `${P}'s`)}.`,
+    `${P}'s open hits on your board, ships not sunk yet: ${f.theirOpenHits.join(', ') || 'none'}.`,
     `Next shot: ${f.turn === 'ai' ? 'yours' : `${P}'s`}.`,
     `Talking to ${P}, "you" is ${P} and "my" is yours: ${P}'s shots sink your ships, and yours sink theirs. ` +
-      `Any tip about where ${P} should shoot is about your board, never ${P}'s.`,
+      `${P} only shoots at your board, so a tip for ${P} can only be about ${P}'s open hits there, never about your own shots.`,
   ].join('\n');
 }
 
@@ -1319,6 +1322,7 @@ function turnBlock(
           yourShips: s.aiGrid.ships,
           history: s.history,
           turn: s.turn,
+          theirOpenHits: cellsWhere(s.aiGrid, (c) => c === 'hit'),
         }),
       );
     }
