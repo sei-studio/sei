@@ -173,6 +173,11 @@ export interface TabletopStageOptions {
   ambientFps?: number;
   /** Ambient tier sleeps this long after the last wake (default AMBIENT_SLEEP_MS). */
   ambientSleepMs?: number;
+  /**
+   * A see-through canvas (cleared to transparent), for an environment that
+   * puts its backdrop behind the canvas in the page (Fleet Battle's water).
+   */
+  transparent?: boolean;
 }
 
 export class TabletopStage {
@@ -230,7 +235,7 @@ export class TabletopStage {
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: opts.transparent === true });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // Redrawn on demand (see frame()): ambient-only frames reuse it.
@@ -306,6 +311,11 @@ export class TabletopStage {
     return (
       !!this.ambient && !this.ambientDisabled && !document.hidden && this.focused && now < this.awakeUntil
     );
+  }
+
+  /** Someone can see the stage: the document is visible and the window has focus. */
+  get watched(): boolean {
+    return !document.hidden && this.focused;
   }
 
   /** Point the shared raycaster at a client coordinate; null if unsized. */

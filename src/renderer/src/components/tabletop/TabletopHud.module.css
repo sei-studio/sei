@@ -65,7 +65,12 @@
 }
 
 .openSea {
-  --scene-room: #a6dcec;
+  /* The water video's mean color, shown until its first frame. Ink is a step
+     stronger here, since moving caustics sit behind every label. */
+  --scene-room: #2b9fcb;
+  --scene-ink-soft: rgba(20, 29, 44, 0.84);
+  --scene-ink-faint: rgba(20, 29, 44, 0.78);
+  --scene-text-shadow: 0 0 6px rgba(255, 255, 255, 0.95), 0 0 2px rgba(255, 255, 255, 0.9);
 }
 
 .stage {

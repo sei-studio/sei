@@ -1,14 +1,14 @@
 /**
  * FleetScene — the 3D Fleet Battle sea (three.js, no React).
  *
- * Open water on a bright day (openSea.ts: the stage environment, the sea out
- * to a horizon, sky, islands). The two 10x10 grids are areas marked on the
- * water: the sea shader draws their cell lines and a lighter lagoon tint, a
- * rope of yellow and white floats rings each one with striped buoys at the
- * corners, and floating white markers carry the row letters and column
- * numbers. The player's waters are on the left with their toy fleet, the
- * companion's on the right. Ships float on the shared sea and cast shadows
- * onto it.
+ * Open water on a bright day, seen from high above so the far rows read and
+ * click as easily as the near ones (openSea.ts: the water is a looping video
+ * behind the canvas). The two 10x10 grids are areas marked on the water: a
+ * lighter lagoon tint with cell lines, a rope of yellow and white floats
+ * around each one with striped buoys at the corners, and floating white
+ * markers carrying the row letters and column numbers. The player's waters
+ * are on the left with their toy fleet, the companion's on the right. Ships
+ * float on the shared sea and cast shadows onto it.
  *
  * Shots are pegs, the same on both boards: white for a miss (with a splash
  * when it lands), red with a little flame and smoke for a hit (with a burst).
@@ -20,8 +20,9 @@
  * its berths and are dragged (or clicked, or moved by keyboard) onto the left
  * area; a ghost shows where a held ship would go, green when it fits.
  *
- * Driven imperatively by FleetBoard3D.tsx; rendering is on demand plus the
- * stage's throttled, self-sleeping ambient tier for the water and flames.
+ * Driven imperatively by FleetBoard3D.tsx. Rendering is on demand only: the
+ * water moves in its video, so nothing here redraws while the board is idle
+ * (no ambient tier; ships, flames and smoke hold still between changes).
  * Colors are 3D art-asset values (literal by design, like the chess scene).
  */
 
@@ -37,7 +38,7 @@ import {
 import { makeWoodTexture } from '../../chess/three/woodTexture';
 import { TabletopStage, easeOut, easeOutBack, endFraming, smooth } from '../../tabletop/TabletopStage';
 import { roundedRect } from '../../connect4/three/Connect4Scene';
-import { HORIZON_FRAC, OpenSea, SEA_LEVEL, openSeaEnvironment } from './openSea';
+import { OpenSea, SEA_LEVEL, openSeaEnvironment } from './openSea';
 import { DECK_Y, ENEMY_PALETTE, PLAYER_PALETTE, ShipLibrary } from './shipGeometry';
 import { ROW_LETTERS, type GridPos } from '../fleetUtil';
 
@@ -76,9 +77,12 @@ const ROPE = N / 2 + 0.2;
 const MARK = N / 2 + 0.68;
 /** Pier deck height; harbor ships float in its berths at the waterline. */
 const PIER_TOP = WATER_Y + 0.3;
-/** Camera: field of view and elevation (degrees). Low enough to look out to sea, steep enough for readable grids. */
-const FOV = 42;
-const ELEVATION = 45;
+/**
+ * Camera: field of view and elevation (degrees). Close to straight down, so
+ * every row is about the same size on screen, with a little perspective left.
+ */
+const FOV = 34;
+const ELEVATION = 72;
 const DOCK_LEFT = TRAY_X - 3.15;
 const DOCK_ROW_Z = [-4.2, -2.1, 0, 2.1, 4.2];
 const DRAFT = 0.02; // ships float this far above their waterline origin
@@ -209,7 +213,8 @@ export class FleetScene {
   private readonly pegs = new Map<string, PegEntry>();
   private pegDrops: Array<{ obj: THREE.Object3D; y: number; start: number; delay: number }> = [];
   private heldDock: BATTLESHIPShipName | null = null;
-  private thinking: { pos: GridPos; x: number; z: number; nextAt: number } | null = null;
+  /** The companion's roaming aim: it hops cell to cell and glides there. */
+  private thinking: { pos: GridPos; x: number; z: number; timer: ReturnType<typeof setTimeout> | null } | null = null;
   private dockUnplaced = new Set<BATTLESHIPShipName>(BATTLESHIP_SHIP_NAMES);
 
   /** Called after the camera is re-framed (projected anchors moved). */
@@ -219,9 +224,7 @@ export class FleetScene {
     this.stage = new TabletopStage(container, {
       environment: openSeaEnvironment,
       exposure: 1.0,
-      // Water, bob and flames read fine at 15 fps, and the scene redraw is the cost.
-      ambientFps: 15,
-      ambientSleepMs: 15_000,
+      transparent: true,
     });
     this.stage.camera.fov = FOV;
     const own = this.stage.own.bind(this.stage);
@@ -301,7 +304,6 @@ export class FleetScene {
 
     this.stage.onResize = (aspect, w, h) => this.frameCamera(aspect, w, h);
     this.stage.tick = (now, dt) => this.tick(now, dt);
-    this.stage.ambient = (now, dt) => this.ambientTick(now, dt);
     this.setPhase('battle', false);
   }
 
@@ -356,7 +358,6 @@ export class FleetScene {
     } else {
       this.lastShotRing.visible = false;
     }
-    this.stage.wake();
     this.stage.invalidate();
   }
 
@@ -365,7 +366,6 @@ export class FleetScene {
     this.dockUnplaced = new Set(unplaced);
     this.heldDock = held;
     for (const [name, mesh] of this.dockShips) mesh.visible = this.dockUnplaced.has(name);
-    this.stage.wake();
     this.stage.invalidate();
   }
 
@@ -392,23 +392,23 @@ export class FleetScene {
       this.reticle.position.set(c.x, WATER_Y + 0.02, c.z);
       this.reticle.visible = true;
     }
-    this.stage.wake();
     this.stage.invalidate();
   }
 
   /** The companion is aiming: a red reticle roams the player's waters. */
   setThinking(on: boolean): void {
     if (!on) {
+      if (this.thinking?.timer) clearTimeout(this.thinking.timer);
       this.thinking = null;
       this.aim.visible = false;
     } else if (!this.thinking) {
       const pos = { row: 4, col: 5 };
       const c = this.cellCenter('player', pos.row, pos.col);
-      this.thinking = { pos, x: c.x, z: c.z, nextAt: performance.now() + 500 };
+      this.thinking = { pos, x: c.x, z: c.z, timer: null };
       this.aim.position.set(c.x, WATER_Y + 0.02, c.z);
-      this.aim.visible = !this.stage.ambientDisabled;
+      this.aim.visible = true;
+      this.scheduleAimHop(500);
     }
-    this.stage.wake();
     this.stage.invalidate();
   }
 
@@ -457,6 +457,7 @@ export class FleetScene {
     };
   }
 
+  /** Pointer activity (kept for the board; the scene has nothing to wake). */
   wake(): void {
     this.stage.wake();
   }
@@ -484,6 +485,9 @@ export class FleetScene {
 
   dispose(): void {
     this.disposed = true;
+    if (this.thinking?.timer) clearTimeout(this.thinking.timer);
+    this.thinking = null;
+    this.sea.dispose();
     for (const f of this.fx) f.done();
     this.fx = [];
     for (const g of this.slickGeos.values()) g.dispose();
@@ -697,7 +701,7 @@ export class FleetScene {
     }
     for (const [key, e] of [...this.pegs]) if (!want.has(key)) this.removePeg(key, e);
     this.flickers = [...this.pegs.values()].flatMap((e) => e.flickers);
-    if (lit) this.poseFlickers(performance.now(), true);
+    if (lit) this.poseFlickers(performance.now());
   }
 
   private removePeg(key: string, e: PegEntry): void {
@@ -851,8 +855,8 @@ export class FleetScene {
     const elev = THREE.MathUtils.degToRad(ELEVATION);
     const look = new THREE.Vector3(0, 0, 0.6);
     // Both areas edge to edge, then pull back until they fit the room below
-    // the sky band (the turn line sits on the sky).
-    const top0 = HORIZON_FRAC + 0.035;
+    // a strip at the top for the turn line and its hint (about 50 px).
+    const top0 = Math.min(0.2, Math.max(0.085, 52 / Math.max(1, this.viewH)));
     const bottom0 = 0.975;
     const room = bottom0 - top0;
     let d = (TRAY_X + TRAY_HALF + 0.3) / (tanHalf * this.aspect);
@@ -871,12 +875,12 @@ export class FleetScene {
     }
     d = hi;
     const ext = this.restExtent(look, elev, d);
-    // Slide the picture down (a lens shift, so the camera keeps its angle)
-    // to open the sky band; spare height goes mostly above the areas (more open sea).
+    // Slide the picture (a lens shift, so the camera keeps its angle) to
+    // centre the areas in the room below the turn line.
     const span = ext.bottom - ext.top;
-    const skyPx = (top0 + Math.max(0, room - span) * 0.7 - ext.top) * this.viewH;
+    const skyPx = (top0 + Math.max(0, room - span) * 0.5 - ext.top) * this.viewH;
     // Game over: pull back and slide up so row J clears the result card. The
-    // sky shift hands over to the lift as the tween runs.
+    // centring shift hands over to the lift as the tween runs.
     const shift = this.endShiftAt(now);
     this.shiftShown = shift;
     const end = endFraming(this.viewH, ext.top, ext.bottom, shift);
@@ -884,13 +888,11 @@ export class FleetScene {
     const offY = end.liftPx - skyPx * (1 - shift);
     if (Math.abs(offY) > 0.5) cam.setViewOffset(this.viewW, this.viewH, 0, offY, this.viewW, this.viewH);
     else if (cam.view) cam.clearViewOffset();
-    // The horizon, haze and sky follow the framing; the haze starts past the far markers.
-    this.sea.layout(this.viewH, this.viewW, -TRAY_HALF - 0.5, -TRAY_HALF - 2);
     this.stage.invalidate();
     return now - this.endShift.start < 700;
   }
 
-  private shipPose(ent: ShipEntry, now: number, ambient: boolean): boolean {
+  private shipPose(ent: ShipEntry, now: number): boolean {
     let moving = false;
     let y = 0;
     let roll = 0;
@@ -911,19 +913,13 @@ export class FleetScene {
       else ent.dropStart = -1;
       y += (1 - easeOutBack(t)) * 0.7;
     }
-    if (ambient && this.stage.ambientAwake(now)) {
-      const k = ent.sunk ? 0.4 : 1;
-      y += Math.sin(now / 900 + ent.phase) * 0.012 * k;
-      roll += Math.sin(now / 1300 + ent.phase * 1.7) * 0.014 * k;
-      pitch += Math.sin(now / 1100 + ent.phase * 0.7) * 0.008 * k;
-    }
     ent.tilt.position.y = y;
     ent.tilt.rotation.set(roll, 0, pitch);
     return moving;
   }
 
-  private poseFlickers(now: number, force = false): void {
-    if (!force && !this.stage.ambientAwake(now)) return;
+  /** Flames and smoke hold a still pose (varied per peg); nothing animates them. */
+  private poseFlickers(now: number): void {
     for (const f of this.flickers) {
       if (f.kind === 'flame') {
         const s = 0.85 + 0.25 * Math.sin(now / 90 + f.phase) * Math.sin(now / 53 + f.phase * 2);
@@ -937,7 +933,7 @@ export class FleetScene {
     }
   }
 
-  private tick(now: number, _dt: number): boolean {
+  private tick(now: number, dt: number): boolean {
     let moving = this.applyPhasePose(now);
     if (this.endShiftAt(now) !== this.shiftShown) {
       this.applyCamera(now);
@@ -945,7 +941,25 @@ export class FleetScene {
       this.onLayout();
     }
 
-    for (const ent of this.shipMap.values()) if (this.shipPose(ent, now, false)) moving = true;
+    for (const ent of this.shipMap.values()) if (this.shipPose(ent, now)) moving = true;
+
+    // The companion's aim glides to the cell it just hopped to (a fifth of a
+    // second of frames per hop); it jumps when nobody is watching.
+    const th = this.thinking;
+    if (th) {
+      const c = this.cellCenter('player', th.pos.row, th.pos.col);
+      const snap = this.stage.reducedMotion || this.stage.softwareGl || !this.stage.watched;
+      const k = snap ? 1 : 1 - Math.exp(-dt / 40);
+      th.x += (c.x - th.x) * k;
+      th.z += (c.z - th.z) * k;
+      if (Math.abs(c.x - th.x) + Math.abs(c.z - th.z) < 0.02) {
+        th.x = c.x;
+        th.z = c.z;
+      } else {
+        moving = true;
+      }
+      this.aim.position.set(th.x, WATER_Y + 0.02, th.z);
+    }
 
     // Pegs plug in from above with a small bounce.
     if (this.pegDrops.length) {
@@ -995,28 +1009,19 @@ export class FleetScene {
     return moving;
   }
 
-  /** Throttled ambient tier: water, bobbing ships, flames, smoke, the aim. */
-  private ambientTick(now: number, dt: number): boolean {
-    this.sea.time.value += dt / 1000;
-    for (const ent of this.shipMap.values()) this.shipPose(ent, now, true);
-    this.poseFlickers(now);
+  /** Every so often while the companion thinks, its aim hops to another cell. */
+  private scheduleAimHop(delay: number): void {
     const th = this.thinking;
-    if (th) {
-      this.stage.wake();
-      if (now > th.nextAt) {
-        th.pos = {
-          row: THREE.MathUtils.clamp(th.pos.row + Math.round((Math.random() - 0.5) * 6), 0, N - 1),
-          col: THREE.MathUtils.clamp(th.pos.col + Math.round((Math.random() - 0.5) * 6), 0, N - 1),
-        };
-        th.nextAt = now + 700 + Math.random() * 900;
-      }
-      const c = this.cellCenter('player', th.pos.row, th.pos.col);
-      th.x += (c.x - th.x) * 0.2;
-      th.z += (c.z - th.z) * 0.2;
-      this.aim.position.set(th.x, WATER_Y + 0.02, th.z);
-    }
-    if (this.reticle.visible) this.reticle.scale.setScalar(0.96 + 0.05 * (0.5 + 0.5 * Math.sin(now / 260)));
-    return true;
+    if (!th || this.disposed) return;
+    th.timer = setTimeout(() => {
+      if (this.thinking !== th || this.disposed) return;
+      th.pos = {
+        row: THREE.MathUtils.clamp(th.pos.row + Math.round((Math.random() - 0.5) * 6), 0, N - 1),
+        col: THREE.MathUtils.clamp(th.pos.col + Math.round((Math.random() - 0.5) * 6), 0, N - 1),
+      };
+      this.stage.invalidate();
+      this.scheduleAimHop(700 + Math.random() * 900);
+    }, delay);
   }
 
   // ── Materials and textures ─────────────────────────────────────────────────
