@@ -589,17 +589,19 @@ describe('Fleet Battle prompt facts', () => {
       turn: 'ai',
       theirOpenHits: ['E5'],
     });
-    expect(text).toContain("Ren's open hits on your board, ships not sunk yet: E5.");
-    expect(text).toContain("Your ships Ren has sunk: 1 (battleship). Ren's ships you have sunk: 1 (destroyer).");
-    expect(text).toContain("Ren's last shots, on your board, newest first: F5 (sank your battleship), E5 (hit).");
-    expect(text).toContain("Your last shots, at Ren's fleet (cells Ren never shoots at), newest first: B3 (sank Ren's destroyer), B2 (hit).");
-    expect(text).toContain('Next shot: yours.');
-    expect(text).toContain('"you" is Ren and "my" is yours');
+    expect(text).toContain('("you" is Ren, "I" and "my" are you)');
+    expect(text).toContain('- You sank: my battleship.');
+    expect(text).toContain('- I sank: your destroyer.');
+    expect(text).toContain('- Your last shots, at my board: F5 sank my battleship, E5 hit.');
+    expect(text).toContain('- My last shots, at your board: B3 sank your destroyer, B2 hit.');
+    expect(text).toContain('- Your open hits on my board: E5.');
+    expect(text).toContain('- Next shot: mine.');
     const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
-    expect(none).toContain("Ren's open hits on your board, ships not sunk yet: none.");
-    expect(none).toContain("Your ships Ren has sunk: none. Ren's ships you have sunk: none.");
-    expect(none).toContain("Ren's last shots, on your board, newest first: none yet.");
-    expect(none).toContain("Next shot: Ren's.");
+    expect(none).toContain('- You sank: none of my ships yet.');
+    expect(none).toContain('- I sank: none of your ships yet.');
+    expect(none).toContain('- Your last shots, at my board: none yet.');
+    expect(none).toContain('- Your open hits on my board: none.');
+    expect(none).toContain('- Next shot: yours.');
   });
 
   it('the per-game nudges vary game to game and follow the injected randomness', () => {
@@ -638,8 +640,8 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(rows).toHaveLength(20);
     expect(rows.join('')).not.toMatch(/S/);
     expect(block).toContain('Facts the app checked');
-    expect(block).toContain("Your ships Player has sunk: none. Player's ships you have sunk: none.");
-    expect(block).toContain("Next shot: Player's.");
+    expect(block).toContain('- You sank: none of my ships yet.');
+    expect(block).toContain('- Next shot: yours.');
     expect(block).toContain('They just said to you: \\"where are your ships?\\"');
   });
 
@@ -651,9 +653,9 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     reply = () => ({ content: [text('lucky')] });
     await handlePlayerChat({ characterId: CHAR, text: 'where next?' });
     const block = lastUserText(calls[0]);
-    expect(block).toContain("Player's open hits on your board, ships not sunk yet: A1.");
-    expect(block).toContain("Player's last shots, on your board, newest first: A1 (hit).");
-    expect(block).toContain("Your last shots, at Player's fleet (cells Player never shoots at), newest first: J10 (miss).");
+    expect(block).toContain('- Your open hits on my board: A1.');
+    expect(block).toContain('- Your last shots, at my board: A1 hit.');
+    expect(block).toContain('- My last shots, at your board: J10 miss.');
   });
 
   it('a line sent while its shot runs is quoted and placed after the shot and the line it said', async () => {
