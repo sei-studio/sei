@@ -1176,7 +1176,8 @@ export function chatFactsText(f: {
     `- My last shots, at your board: ${last('ai', 'your')}.`,
     `- Your open hits on my board: ${f.theirOpenHits.join(', ') || 'none'}.`,
     `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
-    `${P} only shoots at your board, so a shooting tip for ${P} can only name ${P}'s open hits there, never a cell you shot at.`,
+    `A shooting tip for ${P} can only name a cell from "Your open hits on my board" (when that says none, there is no cell ` +
+      'to name), never one from "My last shots".',
   ].join('\n');
 }
 
