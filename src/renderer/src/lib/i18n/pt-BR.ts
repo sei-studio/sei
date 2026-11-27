@@ -2611,4 +2611,18 @@ export const PT_BR: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "Não foi possível abrir o pagamento",
   "Nothing was charged. Check your connection and try again.": "Nada foi cobrado. Verifique sua conexão e tente de novo.",
+  // 261127: Settings > Microphone.
+  "Microphone": "Microfone",
+  "Input device": "Dispositivo de entrada",
+  "System default": "Padrão do sistema",
+  "Microphone {n}": "Microfone {n}",
+  "Input level": "Nível de entrada",
+  "Stop": "Parar",
+  "Sensitivity": "Sensibilidade",
+  "About microphone sensitivity": "Sobre a sensibilidade do microfone",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "O quanto um som conta facilmente como você falando numa chamada. Diminua se a respiração, a digitação ou o ruído de fundo forem captados. Aumente se o companion não ouvir quando você fala baixo.",
+  "Sei is not allowed to use your microphone.": "O Sei não tem permissão para usar seu microfone.",
+  "Could not open the microphone. Another app may be using it.": "Não foi possível abrir o microfone. Outro app pode estar usando.",
+  "The microphone you picked is not connected, so calls use the default one.": "O microfone que você escolheu não está conectado, então as chamadas usam o padrão.",
+  "[using the default microphone, the one picked in Settings is not connected]": "[usando o microfone padrão, o escolhido nas Configurações não está conectado]",
 };

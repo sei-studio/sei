@@ -19,6 +19,12 @@
  *   cut_lines      (261112) the words that made a cut reached the companion
  *                  that was cut, marked as an interruption (cuts minus this
  *                  is cuts whose words never became a turn)
+ *   laugh_kept     (261127) not an interrupt count: a cloud transcript that
+ *                  was only a laughter tag reached the companion as "haha"
+ *                  because the clip had a voice in it (dictation.ts
+ *                  laughHasVoice)
+ *   laugh_dropped  (261127) the same, dropped: no voice in the clip (a
+ *                  breath, a click). Sent as stt_laugh_kept / stt_laugh_dropped.
  */
 export interface CallInterruptCounts {
   ducks: number;
@@ -28,12 +34,34 @@ export interface CallInterruptCounts {
   no_voice: number;
   no_word: number;
   cut_lines: number;
+  laugh_kept: number;
+  laugh_dropped: number;
 }
 
-export const CALL_INTERRUPT_KEYS = ['ducks', 'cuts', 'echo_rejected', 'manual', 'no_voice', 'no_word', 'cut_lines'] as const;
+export const CALL_INTERRUPT_KEYS = [
+  'ducks',
+  'cuts',
+  'echo_rejected',
+  'manual',
+  'no_voice',
+  'no_word',
+  'cut_lines',
+  'laugh_kept',
+  'laugh_dropped',
+] as const;
 
 export function zeroInterruptCounts(): CallInterruptCounts {
-  return { ducks: 0, cuts: 0, echo_rejected: 0, manual: 0, no_voice: 0, no_word: 0, cut_lines: 0 };
+  return {
+    ducks: 0,
+    cuts: 0,
+    echo_rejected: 0,
+    manual: 0,
+    no_voice: 0,
+    no_word: 0,
+    cut_lines: 0,
+    laugh_kept: 0,
+    laugh_dropped: 0,
+  };
 }
 
 /** The `voice_call_ended` props, prefixed so they group in the dashboard. */
@@ -45,6 +73,8 @@ export function callInterruptProps(c: CallInterruptCounts): {
   interrupt_no_voice: number;
   interrupt_no_word: number;
   interrupt_cut_lines: number;
+  stt_laugh_kept: number;
+  stt_laugh_dropped: number;
 } {
   return {
     interrupt_ducks: c.ducks,
@@ -54,5 +84,7 @@ export function callInterruptProps(c: CallInterruptCounts): {
     interrupt_no_voice: c.no_voice,
     interrupt_no_word: c.no_word,
     interrupt_cut_lines: c.cut_lines,
+    stt_laugh_kept: c.laugh_kept,
+    stt_laugh_dropped: c.laugh_dropped,
   };
 }

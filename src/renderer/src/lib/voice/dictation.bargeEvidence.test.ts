@@ -812,7 +812,8 @@ describe('Scribe on a burst (261101)', () => {
     });
     expect(quiet.cuts).toBe(1);
     expect(quiet.utterances).toEqual(['stop']);
-    expect(quiet.sttHints).toEqual([{ burst: true }]);
+    // 261127: every pass also carries the clip's voiceBar.
+    expect(quiet.sttHints).toEqual([expect.objectContaining({ burst: true })]);
     const loud = await runScene({
       ...loudSyllables,
       totalFrames: 140,
@@ -835,7 +836,7 @@ describe('Scribe on a burst (261101)', () => {
       stt: () => ({ text: 'wait, hold on', minWordLogprob: -1.2 }),
     });
     expect(r.cuts).toBe(1);
-    expect(r.sttHints[0]).toBeUndefined();
+    expect(r.sttHints[0]?.burst).toBeUndefined();
   });
 });
 
