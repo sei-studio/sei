@@ -620,7 +620,7 @@ export function FleetBoard3D({
 
       {game && anchors ? (
         <>
-          <div className={hud.sceneLabel} style={{ left: anchors.player.x, top: anchors.player.y }}>
+          <div className={`${hud.sceneLabel} ${hud.sceneLabelArea}`} style={{ left: anchors.player.x, top: anchors.player.y }}>
             {t('Your fleet')}
           </div>
           {placing ? (
@@ -632,7 +632,7 @@ export function FleetBoard3D({
                 </div>
               ))
           ) : (
-            <div className={hud.sceneLabel} style={{ left: anchors.enemy.x, top: anchors.enemy.y }}>
+            <div className={`${hud.sceneLabel} ${hud.sceneLabelArea}`} style={{ left: anchors.enemy.x, top: anchors.enemy.y }}>
               {t("{name}'s waters", { name: companionName })}
             </div>
           )}

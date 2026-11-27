@@ -1144,14 +1144,25 @@ export class FleetScene {
     if (ctx) {
       const size = canvas.width;
       ctx.fillStyle = C_MARK_INK;
-      ctx.font = `700 ${Math.round(size * 0.042)}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.font = `700 ${Math.round(size * 0.05)}px ui-sans-serif, system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const toU = (v: number): number => ((v + TRAY_HALF) / (TRAY_HALF * 2)) * size;
+      // Glyphs fill most of the marker disc; wide ones ("10") squeeze to fit.
+      const maxW = (0.56 / (TRAY_HALF * 2)) * size;
+      const put = (text: string, x: number, y: number): void => {
+        const w = ctx.measureText(text).width;
+        const sx = w > maxW ? maxW / w : 1;
+        ctx.save();
+        ctx.translate(x, y + 1);
+        ctx.scale(sx, 1);
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      };
       for (let i = 0; i < N; i++) {
         const at = i - N / 2 + 0.5;
-        ctx.fillText(String(i + 1), toU(at), toU(-MARK) + 1);
-        ctx.fillText(ROW_LETTERS[i], toU(-MARK), toU(at) + 1);
+        put(String(i + 1), toU(at), toU(-MARK));
+        put(ROW_LETTERS[i], toU(-MARK), toU(at));
       }
     }
     const tex = new THREE.CanvasTexture(canvas);

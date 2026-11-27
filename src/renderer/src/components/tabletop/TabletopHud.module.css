@@ -262,6 +262,13 @@
   text-shadow: var(--scene-text-shadow);
 }
 
+/* Area names over the open sea: a touch larger and darker so they stay
+   readable over the moving water at narrow widths. */
+.sceneLabelArea {
+  font-size: 11.5px;
+  color: var(--scene-ink);
+}
+
 /* ── Top-left controls (borderless glyph buttons, like chess) ──────────── */
 /* A label that starts at its anchor (beside a harbor slot), vertically centred. */
 .sceneLabelStart {

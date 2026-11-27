@@ -52,6 +52,10 @@ const FRAME_TOP = 0.18;
 const FRAME_BOTTOM = 0.88;
 const PILE_X = 6.0;
 const PILE_Z = 1.35;
+/** Table depth of the YOU / companion labels, just in front of the stacks. */
+const LABEL_Z = PILE_Z + 0.8;
+/** Screen px the label centre keeps clear of the stage's bottom edge. */
+const LABEL_CLEAR_PX = 13;
 const GRAVITY = 40; // units / s^2
 const BOUNCE = 0.3;
 
@@ -117,6 +121,7 @@ export class Connect4Scene {
   private aspect = 1;
   private viewW = 1;
   private viewH = 1;
+  private restFit = 1;
   /** endShift value the camera last showed; the tick re-frames until it lands. */
   private shiftShown = 0;
   /** 0..1: the game is over, the frame rises so the result card clears it. */
@@ -383,8 +388,8 @@ export class Connect4Scene {
 
   /** Screen anchors (container px) under the two disc stacks. */
   pileAnchors(): { player: { x: number; y: number }; ai: { x: number; y: number } } {
-    const left = this.stage.project(new THREE.Vector3(-PILE_X, 0, PILE_Z + 1.05));
-    const right = this.stage.project(new THREE.Vector3(PILE_X, 0, PILE_Z + 1.05));
+    const left = this.stage.project(new THREE.Vector3(-PILE_X, 0, LABEL_Z));
+    const right = this.stage.project(new THREE.Vector3(PILE_X, 0, LABEL_Z));
     return { player: left, ai: right };
   }
 
@@ -416,25 +421,61 @@ export class Connect4Scene {
     this.aspect = aspect;
     this.viewW = w;
     this.viewH = h;
+    this.restFit = this.fitLabels();
     this.applyCamera(performance.now());
     queueMicrotask(() => this.onLayout());
   }
 
-  private applyCamera(now: number): void {
-    const aspect = this.aspect;
-    // Fit the frame (plus the ghost disc above it) vertically and the two
-    // stacks horizontally; whichever needs the farther camera wins. Extra
-    // headroom keeps the turn line clear of the ghost disc.
+  /**
+   * Base camera distance: fit the frame (plus the ghost disc above it)
+   * vertically and the two stacks horizontally; whichever needs the farther
+   * camera wins. Extra headroom keeps the turn line clear of the ghost disc.
+   */
+  private baseDistance(): number {
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.stage.camera.fov / 2));
     const vertical = 4.55 / tanHalf;
-    const horizontal = 7.9 / (tanHalf * aspect);
-    // Game over: pull back and slide up so the frame clears the result card.
-    const shift = this.endShiftAt(now);
-    this.shiftShown = shift;
-    const end = endFraming(this.viewH, FRAME_TOP, FRAME_BOTTOM, shift);
-    const d = Math.max(vertical, horizontal) * end.k;
+    const horizontal = 7.9 / (tanHalf * this.aspect);
+    return Math.max(vertical, horizontal);
+  }
+
+  private placeAt(d: number): void {
     const lookY = (GHOST_Y + 0.2) / 2 + 0.22;
     this.stage.placeCamera(new THREE.Vector3(0, lookY, 0.4), THREE.MathUtils.degToRad(21), d);
+  }
+
+  /**
+   * Pull-back factor so the HTML labels under the stacks clear the bottom
+   * edge at rest. The labels sit nearest the camera, so in wide, short stages
+   * the plain fit drops them just past the edge.
+   */
+  private fitLabels(): number {
+    const cam = this.stage.camera;
+    if (cam.view) cam.clearViewOffset();
+    const base = this.baseDistance();
+    const anchor = new THREE.Vector3(PILE_X, 0, LABEL_Z);
+    const limit = this.viewH - LABEL_CLEAR_PX;
+    let fit = 1;
+    for (let i = 0; i < 16; i++) {
+      this.placeAt(base * fit);
+      cam.updateMatrixWorld();
+      const y = ((1 - anchor.clone().project(cam).y) / 2) * this.viewH;
+      if (y <= limit) break;
+      fit *= 1.015;
+    }
+    return fit;
+  }
+
+  private applyCamera(now: number): void {
+    // Game over: pull back and slide up so the frame clears the result card.
+    // The end framing works on the rest frame's screen extent, which the
+    // label pull-back has shrunk toward the centre.
+    const shift = this.endShiftAt(now);
+    this.shiftShown = shift;
+    const fit = this.restFit;
+    const top = 0.5 - (0.5 - FRAME_TOP) / fit;
+    const bottom = 0.5 + (FRAME_BOTTOM - 0.5) / fit;
+    const end = endFraming(this.viewH, top, bottom, shift);
+    this.placeAt(this.baseDistance() * fit * end.k);
     applyLift(this.stage.camera, this.viewW, this.viewH, end.liftPx);
     this.stage.invalidate();
   }
