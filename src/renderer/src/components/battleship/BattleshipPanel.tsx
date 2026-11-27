@@ -3,15 +3,20 @@
  *
  * The 3D sea table (FleetBoard3D) fills the panel edge to edge in every state
  * and everything else floats over it as the chess panel's de-boxed HUD:
- *   - launch (no game yet, or Rematch clicked on a finished game): title, a
- *     one-line hint and one button ("Launch", "Start" on the rematch pass)
+ *   - launch (no game yet): title, a one-line hint and one button ("Launch")
  *     over the empty trays under a scrim;
  *   - preparing: fleet setup in the scene (harbor on the right), with
- *     Rotate / Random / Start battle top-right (owned by FleetBoard3D);
+ *     Rotate / Random / Start battle top-right (owned by FleetBoard3D); once
+ *     the player's fleet is in, "{name} is placing ships…" until the
+ *     character's own fleet (a tool call) is ready and main opens the battle;
  *   - active: turn line top-center, the borderless resign flag top-left with
- *     an inline confirm;
- *   - ended: the sunk fleet lies listing in the water and the result card
- *     with Rematch rises at the bottom.
+ *     an inline confirm (also during setup: main allows it);
+ *   - aiTurnFailed (placement or shot): "{name} couldn't move" with a
+ *     borderless Try again in the turn line (BATTLESHIP:retry);
+ *   - ended: the character's whole fleet is revealed (afloat ships surface,
+ *     sunk ones list in the water) and the result card with Rematch rises at
+ *     the bottom. Rematch starts the next game in main straight away, which
+ *     alternates who fires first.
  * Closing goes through the unified GameSurface "x".
  *
  * Contract: src/shared/battleshipIpc.ts +
@@ -64,6 +69,8 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   const move = useBattleshipStore((s) => s.move);
   const placeFleet = useBattleshipStore((s) => s.placeFleet);
   const resign = useBattleshipStore((s) => s.resign);
+  const rematch = useBattleshipStore((s) => s.rematch);
+  const retry = useBattleshipStore((s) => s.retry);
   const hydrate = useBattleshipStore((s) => s.hydrate);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
@@ -71,8 +78,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
 
   const [startErr, setStartErr] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
-  /** Rematch clicked on a finished game: show the launch layout again. */
-  const [rematchScreen, setRematchScreen] = useState(false);
+  const [rematching, setRematching] = useState(false);
 
   // Resume any game main still holds (navigation away and back, relaunch).
   useEffect(() => {
@@ -83,13 +89,13 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   useEffect(() => {
     setStartErr(null);
     setConfirmResign(false);
-    setRematchScreen(false);
+    setRematching(false);
   }, [characterId]);
 
   const gameStatus = game?.status ?? null;
   useEffect(() => {
-    if (gameStatus === 'active' || gameStatus === 'preparing') setRematchScreen(false);
-    if (gameStatus !== 'active') setConfirmResign(false);
+    if (gameStatus === 'ended') setConfirmResign(false);
+    else setRematching(false);
   }, [gameStatus]);
 
   const doStart = async (): Promise<void> => {
@@ -106,7 +112,8 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
     }
   };
 
-  const showLaunch = !game || (game.status === 'ended' && rematchScreen);
+  const showLaunch = !game;
+  const canResign = game?.status === 'active' || game?.status === 'preparing';
   const result = game?.status === 'ended' && game.result ? resultCopy(game.result, name, t) : null;
 
   return (
@@ -118,6 +125,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
             companionName={name}
             onFire={(row, col) => move(characterId, row, col)}
             onPlaceFleet={(ships) => placeFleet(characterId, ships)}
+            onRetry={() => void retry(characterId)}
           />
         </div>
 
@@ -140,13 +148,13 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
                   requestGameLaunch(characterId, { id: 'BATTLESHIP', name: t('Fleet Battle') }, () => void doStart())
                 }
               >
-                {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
+                {starting ? t('Starting…') : t('Launch')}
               </Button>
             </div>
           </div>
         ) : game ? (
           <div className={hud.hud}>
-            {game.status === 'active' ? (
+            {canResign ? (
               <div className={hud.hudTopLeft} role="group" aria-label={t('Game controls')}>
                 {confirmResign ? (
                   <span className={hud.resignConfirm}>
@@ -193,8 +201,16 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
                   <div className={hud.resultDetail}>{result.detail}</div>
                 </div>
                 <div className={hud.resultActions}>
-                  <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
-                    {t('Rematch')}
+                  <Button
+                    kind="accent"
+                    size="md"
+                    disabled={rematching}
+                    onClick={() => {
+                      setRematching(true);
+                      void rematch(characterId).finally(() => setRematching(false));
+                    }}
+                  >
+                    {rematching ? t('Starting…') : t('Rematch')}
                   </Button>
                 </div>
               </div>

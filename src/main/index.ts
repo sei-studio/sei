@@ -1080,13 +1080,15 @@ const QUIT_SURFACE_END_TIMEOUT_MS = 1500;
 const QUIT_WRITE_DRAIN_MS = 1500;
 
 /**
- * End chess, Draw! and backseat for a quit so each sends its `_ended` event
+ * End chess, Draw!, Four in a Row, Fleet Battle and backseat for a quit so each sends its `_ended` event
  * (reason 'app_quit') before the analytics flush. Bounded; never throws.
  */
 async function endGameSurfacesForQuit(): Promise<void> {
   const ends = Promise.allSettled([
     (async () => (await import('./chess/chessService')).endAllChess('app_quit'))(),
     (async () => (await import('./draw/drawService')).endAllDraw('app_quit'))(),
+    (async () => (await import('./connect4/connect4Service')).endAllCONNECT4('app_quit'))(),
+    (async () => (await import('./battleship/battleshipService')).endAllBATTLESHIP('app_quit'))(),
     (async () => (await import('./backseat/backseatService')).endAllBackseat('app_quit'))(),
   ]);
   await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
@@ -1710,7 +1712,7 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  // Forza 4 minigame: module-state deps for src/main/connect4/connect4Service.
+  // Four in a Row minigame: module-state deps for src/main/connect4/connect4Service.
   // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
   {
     const { initCONNECT4Service } = await import('./connect4/connect4Service');
@@ -1725,7 +1727,7 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  // Battleship minigame: module-state deps for src/main/battleship/battleshipService.
+  // Fleet Battle minigame: module-state deps for src/main/battleship/battleshipService.
   // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
   {
     const { initBATTLESHIPService } = await import('./battleship/battleshipService');
@@ -1804,16 +1806,26 @@ async function bootstrap(): Promise<void> {
     void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));
   }
   // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
-  // no look() while she is in chess, Draw! or a Backseat share (bot games
+  // no look() while she is in chess, Draw!, Four in a Row, Fleet Battle or a Backseat share (bot games
   // arrive as inGame). The room source is the host's room store; it gives a
   // companion a room only when a pack is installed.
   void (async () => {
-    const [{ isChessActive }, { isDrawActive }, { getBackseatState }] = await Promise.all([
-      import('./chess/chessService'),
-      import('./draw/drawService'),
-      import('./backseat/backseatService'),
-    ]);
-    setGameSurfaceProbe((id) => isChessActive(id) || isDrawActive(id) || getBackseatState(id) !== null);
+    const [{ isChessActive }, { isDrawActive }, { getBackseatState }, { isCONNECT4Active }, { isBATTLESHIPActive }] =
+      await Promise.all([
+        import('./chess/chessService'),
+        import('./draw/drawService'),
+        import('./backseat/backseatService'),
+        import('./connect4/connect4Service'),
+        import('./battleship/battleshipService'),
+      ]);
+    setGameSurfaceProbe(
+      (id) =>
+        isChessActive(id) ||
+        isDrawActive(id) ||
+        isCONNECT4Active(id) ||
+        isBATTLESHIPActive(id) ||
+        getBackseatState(id) !== null,
+    );
   })().catch((err) => console.warn(`[seilink] game surface probe not wired: ${(err as Error).message}`));
   {
     // Dev only: unpackaged + SEI_SEILINK_ROOM=<room.json> ({packDir, state, characters}).
@@ -2316,6 +2328,9 @@ async function bootstrap(): Promise<void> {
     try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
+    // Four in a Row / Fleet Battle: abort any in-flight turn, drop the queues.
+    try { await (await import('./connect4/connect4Service')).shutdownCONNECT4(); } catch { /* best-effort */ }
+    try { await (await import('./battleship/battleshipService')).shutdownBATTLESHIP(); } catch { /* best-effort */ }
     try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
     // Close the skin server's TCP listener so the port is freed promptly.
     // Bounded (261031): stop() drops idle keep-alive sockets and gives up

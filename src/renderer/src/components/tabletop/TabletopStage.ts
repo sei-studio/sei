@@ -16,8 +16,11 @@
  *   - an optional AMBIENT tier (water, flames, a glow pulse): throttled to
  *     AMBIENT_FPS and put to sleep AMBIENT_SLEEP_MS after the last
  *     wake() (pointer movement or a state push), so a game left open while
- *     the player chats costs nothing. Hidden documents and reduced motion
- *     skip it entirely;
+ *     the player chats costs nothing. Hidden documents, an unfocused window
+ *     (the player is in Minecraft), reduced motion and software WebGL skip
+ *     it entirely.
+ *     Ambient-only frames reuse the last shadow map: the shadow pass is
+ *     redrawn only when something real moved or the game invalidated;
  *   - ownership tracking: geometries, materials and textures registered
  *     through own() are disposed with the stage;
  *   - pointer raycasting against arbitrary planes / objects.
@@ -33,6 +36,18 @@ import { makeWoodTexture } from '../chess/three/woodTexture';
 export const AMBIENT_FPS = 24;
 /** Ambient animation sleeps this long after the last wake(). */
 export const AMBIENT_SLEEP_MS = 30_000;
+
+/** True for software WebGL (SwiftShader, llvmpipe, Microsoft Basic Render). */
+export function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  let name = '';
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
+  } catch {
+    return false;
+  }
+  return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+}
 
 /** Same room color as the chess scene. */
 export const ROOM_COLOR = 0x1a120c;
@@ -57,6 +72,10 @@ export interface TabletopStageOptions {
   keyPosition?: [number, number, number];
   /** Tone mapping exposure (chess: 1.05). */
   exposure?: number;
+  /** Ambient tier rate in frames per second (default AMBIENT_FPS). */
+  ambientFps?: number;
+  /** Ambient tier sleeps this long after the last wake (default AMBIENT_SLEEP_MS). */
+  ambientSleepMs?: number;
 }
 
 export class TabletopStage {
@@ -65,6 +84,8 @@ export class TabletopStage {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly reducedMotion: boolean;
+  /** A software rasterizer (SwiftShader, llvmpipe): every pixel costs CPU. */
+  readonly softwareGl: boolean;
   readonly key: THREE.DirectionalLight;
   readonly timing: StageTiming = { frames: 0, cpuMs: 0, worstMs: 0 };
 
@@ -84,8 +105,20 @@ export class TabletopStage {
   private lastFrameAt = 0;
   private awakeUntil = 0;
   private disposed = false;
+  /** The next frame must redraw the shadow map (set by invalidate()). */
+  private shadowDirty = true;
+  private focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+  private readonly ambientFrameMs: number;
+  private readonly ambientSleepMs: number;
   private readonly onVisibility = (): void => {
     if (!document.hidden) this.wake();
+  };
+  private readonly onFocus = (): void => {
+    this.focused = true;
+    this.wake();
+  };
+  private readonly onBlur = (): void => {
+    this.focused = false;
   };
 
   constructor(container: HTMLElement, opts: TabletopStageOptions = {}) {
@@ -97,9 +130,15 @@ export class TabletopStage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Redrawn on demand (see frame()): ambient-only frames reuse it.
+    this.renderer.shadowMap.autoUpdate = false;
+    this.ambientFrameMs = 1000 / (opts.ambientFps ?? AMBIENT_FPS);
+    this.ambientSleepMs = opts.ambientSleepMs ?? AMBIENT_SLEEP_MS;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = opts.exposure ?? 1.05;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.softwareGl = isSoftwareRenderer(this.renderer.getContext());
+    // On a software rasterizer the cost is fill rate, so keep pixels at 1:1.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.softwareGl ? 1 : 2));
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = 'block';
 
@@ -152,6 +191,8 @@ export class TabletopStage {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     document.addEventListener('visibilitychange', this.onVisibility);
+    window.addEventListener('focus', this.onFocus);
+    window.addEventListener('blur', this.onBlur);
     // First layout happens after the game wires onResize (next microtask).
     queueMicrotask(() => this.resize());
   }
@@ -164,21 +205,32 @@ export class TabletopStage {
 
   /** Schedule one frame (and more while tick() reports motion). */
   invalidate(): void {
-    if (this.disposed || this.raf) return;
-    this.raf = requestAnimationFrame(this.frame);
+    this.shadowDirty = true;
+    this.requestFrame();
   }
 
-  /** Keep the ambient tier running for another AMBIENT_SLEEP_MS. */
+  /**
+   * No ambient tier at all: reduced motion, or a software rasterizer, where
+   * one ambient frame of a full scene costs about a CPU-second and a 15 fps
+   * tier would pin every core. The scene still renders on demand.
+   */
+  get ambientDisabled(): boolean {
+    return this.reducedMotion || this.softwareGl;
+  }
+
+  /** Keep the ambient tier running for another ambientSleepMs. */
   wake(): void {
-    if (this.disposed || !this.ambient || this.reducedMotion) return;
+    if (this.disposed || !this.ambient || this.ambientDisabled) return;
     const wasAsleep = performance.now() > this.awakeUntil;
-    this.awakeUntil = performance.now() + AMBIENT_SLEEP_MS;
+    this.awakeUntil = performance.now() + this.ambientSleepMs;
     if (wasAsleep) this.scheduleAmbient(0);
   }
 
   /** True while the ambient tier is allowed to animate. */
   ambientAwake(now = performance.now()): boolean {
-    return !!this.ambient && !this.reducedMotion && !document.hidden && now < this.awakeUntil;
+    return (
+      !!this.ambient && !this.ambientDisabled && !document.hidden && this.focused && now < this.awakeUntil
+    );
   }
 
   /** Point the shared raycaster at a client coordinate; null if unsized. */
@@ -230,6 +282,8 @@ export class TabletopStage {
     if (this.ambientTimer) clearTimeout(this.ambientTimer);
     this.ro.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibility);
+    window.removeEventListener('focus', this.onFocus);
+    window.removeEventListener('blur', this.onBlur);
     for (const r of this.owned) r.dispose();
     this.owned.length = 0;
     this.renderer.dispose();
@@ -239,11 +293,17 @@ export class TabletopStage {
 
   // ── Internals ──────────────────────────────────────────────────────────
 
+  private requestFrame(): void {
+    if (this.disposed || this.raf) return;
+    this.raf = requestAnimationFrame(this.frame);
+  }
+
   private scheduleAmbient(delay: number): void {
     if (this.ambientTimer || this.disposed) return;
     this.ambientTimer = setTimeout(() => {
       this.ambientTimer = null;
-      if (this.ambientAwake()) this.invalidate();
+      // An ambient-only frame: no shadow redraw unless something invalidated.
+      if (this.ambientAwake()) this.requestFrame();
     }, delay);
   }
 
@@ -269,15 +329,19 @@ export class TabletopStage {
     const moving = this.tick(now, dt);
     let ambientAlive = false;
     if (this.ambient && this.ambientAwake(now)) ambientAlive = this.ambient(now, dt);
+    // The shadow pass is about a quarter of a frame's raster work. Ambient
+    // motion (water, a few mm of bob, flame flicker) needs no fresh shadows.
+    this.renderer.shadowMap.needsUpdate = this.shadowDirty || moving;
+    this.shadowDirty = false;
     this.renderer.render(this.scene, this.camera);
     const spent = performance.now() - t0;
     this.timing.frames++;
     this.timing.cpuMs += spent;
     if (spent > this.timing.worstMs) this.timing.worstMs = spent;
     if (moving) {
-      this.invalidate();
+      this.requestFrame();
     } else if (ambientAlive) {
-      this.scheduleAmbient(1000 / AMBIENT_FPS);
+      this.scheduleAmbient(this.ambientFrameMs);
     }
     // After an idle gap the next frame starts a fresh clock (dt = 16 ms), so a
     // new animation never begins with a jump.

@@ -5,12 +5,12 @@ import {
   canFireAt,
   clampedPlacementAt,
   coordName,
+  enemyShips,
   enemySunkShips,
   lastShotBy,
   placementOfShip,
   rotated,
   shipAt,
-  shotOwners,
 } from './fleetUtil';
 
 const empty = (): BATTLESHIPCell[][] => Array.from({ length: 10 }, () => Array<BATTLESHIPCell>(10).fill('empty'));
@@ -28,6 +28,12 @@ function game(over: Partial<BATTLESHIPGameState> = {}): BATTLESHIPGameState {
     result: null,
     history: [],
     shotsFired: 0,
+    playerShots: 0,
+    aiShots: 0,
+    playerStarts: true,
+    playerFleetPlaced: true,
+    aiFleet: 'ready',
+    aiTurnFailed: null,
     ...over,
   };
 }
@@ -54,11 +60,11 @@ describe('enemySunkShips', () => {
     const p: BATTLESHIPPlacement = { name: 'cruiser', row: 2, col: 4, horizontal: true };
     mark(g.aiVisibleGrid.cells, p, 'sunk');
     g.history = [
-      { row: 2, col: 4, hit: true, sunkShip: null },
-      { row: 0, col: 0, hit: false, sunkShip: null },
-      { row: 2, col: 5, hit: true, sunkShip: null },
-      { row: 0, col: 1, hit: false, sunkShip: null },
-      { row: 2, col: 6, hit: true, sunkShip: 'cruiser' },
+      { by: 'player', row: 2, col: 4, hit: true, sunkShip: null },
+      { by: 'ai', row: 0, col: 0, hit: false, sunkShip: null },
+      { by: 'player', row: 2, col: 5, hit: true, sunkShip: null },
+      { by: 'ai', row: 0, col: 1, hit: false, sunkShip: null },
+      { by: 'player', row: 2, col: 6, hit: true, sunkShip: 'cruiser' },
     ];
     expect(enemySunkShips(g)).toEqual([p]);
   });
@@ -70,8 +76,8 @@ describe('enemySunkShips', () => {
     mark(g.aiVisibleGrid.cells, a, 'sunk');
     mark(g.aiVisibleGrid.cells, b, 'sunk');
     g.history = [
-      { row: 7, col: 2, hit: true, sunkShip: 'destroyer' },
-      { row: 7, col: 5, hit: true, sunkShip: 'submarine' },
+      { by: 'player', row: 7, col: 2, hit: true, sunkShip: 'destroyer' },
+      { by: 'player', row: 7, col: 5, hit: true, sunkShip: 'submarine' },
     ];
     const got = enemySunkShips(g);
     expect(got).toHaveLength(2);
@@ -81,13 +87,42 @@ describe('enemySunkShips', () => {
     expect(new Set(cells).size).toBe(5);
   });
 
-  it("ignores the companion's sink record on the player's own grid", () => {
+  it("ignores the companion's sink records (history.by)", () => {
     const g = game();
-    const own: BATTLESHIPPlacement = { name: 'destroyer', row: 0, col: 0, horizontal: true };
-    mark(g.playerGrid.cells, own, 'sunk');
-    g.playerGrid.ships = [{ name: 'destroyer', size: 2, sunk: true, cells: placementCells(own) }];
-    g.history = [{ row: 0, col: 1, hit: true, sunkShip: 'destroyer' }];
+    const p: BATTLESHIPPlacement = { name: 'destroyer', row: 0, col: 0, horizontal: true };
+    // Same cells sunk on both grids; only the player's record may claim the enemy one.
+    mark(g.playerGrid.cells, p, 'sunk');
+    mark(g.aiVisibleGrid.cells, p, 'sunk');
+    g.history = [{ by: 'ai', row: 0, col: 1, hit: true, sunkShip: 'destroyer' }];
     expect(enemySunkShips(g)).toEqual([]);
+    g.history.push({ by: 'player', row: 0, col: 0, hit: true, sunkShip: 'destroyer' });
+    expect(enemySunkShips(g)).toEqual([p]);
+  });
+});
+
+describe('enemyShips', () => {
+  it('mid-game: only the rebuilt sunk ships', () => {
+    const g = game();
+    const p: BATTLESHIPPlacement = { name: 'destroyer', row: 4, col: 4, horizontal: false };
+    mark(g.aiVisibleGrid.cells, p, 'sunk');
+    g.history = [{ by: 'player', row: 5, col: 4, hit: true, sunkShip: 'destroyer' }];
+    expect(enemyShips(g)).toEqual([{ placement: p, sunk: true }]);
+  });
+
+  it('game over: the revealed fleet from main, afloat ships included', () => {
+    const g = game({ status: 'ended' });
+    const sunk: BATTLESHIPPlacement = { name: 'destroyer', row: 4, col: 4, horizontal: false };
+    const afloat: BATTLESHIPPlacement = { name: 'carrier', row: 0, col: 0, horizontal: true };
+    mark(g.aiVisibleGrid.cells, sunk, 'sunk');
+    g.history = [{ by: 'player', row: 5, col: 4, hit: true, sunkShip: 'destroyer' }];
+    g.aiVisibleGrid.ships = [
+      { name: 'destroyer', size: 2, sunk: true, cells: placementCells(sunk) },
+      { name: 'carrier', size: 5, sunk: false, cells: placementCells(afloat) },
+    ];
+    expect(enemyShips(g)).toEqual([
+      { placement: sunk, sunk: true },
+      { placement: afloat, sunk: false },
+    ]);
   });
 });
 
@@ -109,31 +144,18 @@ describe('placement helpers', () => {
   });
 });
 
-describe('shotOwners', () => {
-  const shots = (list: Array<[number, number, boolean]>): BATTLESHIPShotRecord[] =>
-    list.map(([row, col, hit]) => ({ row, col, hit, sunkShip: null }));
+describe('lastShotBy / canFireAt', () => {
+  const shot = (by: 'player' | 'ai', row: number, col: number): BATTLESHIPShotRecord => ({ by, row, col, hit: false, sunkShip: null });
 
-  it('works out who fired first from the grids', () => {
-    const g = game({ turn: 'player' });
-    g.history = shots([
-      [1, 1, false], // ai
-      [2, 2, false], // player
-      [3, 3, false], // ai
-    ]);
-    g.playerGrid.cells[1][1] = 'miss';
-    g.playerGrid.cells[3][3] = 'miss';
-    g.aiVisibleGrid.cells[2][2] = 'miss';
-    expect(shotOwners(g)).toEqual(['ai', 'player', 'ai']);
+  it('reads the shooter from history.by', () => {
+    const g = game();
+    g.history = [shot('ai', 1, 1), shot('player', 2, 2), shot('ai', 3, 3)];
     expect(lastShotBy(g, 'ai')).toEqual({ row: 3, col: 3 });
     expect(lastShotBy(g, 'player')).toEqual({ row: 2, col: 2 });
-  });
-
-  it('falls back to the turn when both orders fit', () => {
-    const g = game({ turn: 'ai' });
-    g.history = shots([[5, 5, false]]);
-    g.playerGrid.cells[5][5] = 'miss';
-    g.aiVisibleGrid.cells[5][5] = 'miss';
-    expect(shotOwners(g)).toEqual(['player']);
+    // Not strictly alternating (e.g. a retried turn): still exact.
+    g.history.push(shot('player', 4, 4), shot('player', 5, 5));
+    expect(lastShotBy(g, 'player')).toEqual({ row: 5, col: 5 });
+    expect(lastShotBy(game(), 'ai')).toBeNull();
   });
 
   it('only allows firing at untouched enemy cells', () => {

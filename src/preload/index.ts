@@ -309,6 +309,7 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.CONNECT4.move, { characterId, column }),
   CONNECT4Resign: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.resign, characterId),
   CONNECT4Rematch: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.rematch, characterId),
+  CONNECT4Retry: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.retry, characterId),
   CONNECT4End: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.end, characterId),
   onCONNECT4State(cb) {
     const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
@@ -329,6 +330,8 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.resign, characterId),
   BATTLESHIPRematch: (characterId) =>
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.rematch, characterId),
+  BATTLESHIPRetry: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.retry, characterId),
   BATTLESHIPEnd: (characterId) =>
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.end, characterId),
   onBATTLESHIPState(cb) {

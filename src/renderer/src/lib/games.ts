@@ -65,6 +65,15 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
         { name },
       ),
   },
+  // Main-side minigames (261127): no tile art yet, copy only.
+  CONNECT4: {
+    description: (name) =>
+      t('Drop your pieces and line up four in a row before {name} does.', { name }),
+  },
+  BATTLESHIP: {
+    description: (name) =>
+      t('Hide your fleet, then take turns firing at {name}\'s. Sink all five ships first to win.', { name }),
+  },
   // No `backseat` tile (260803): the shared catalog dropped it for the reason
   // written there, and its art now lives on as the header button's icon.
   stardew: {

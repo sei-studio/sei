@@ -104,6 +104,24 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
+/* "{Name} couldn't move" + Try again: the turn line with a borderless action. */
+.turnRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  pointer-events: auto;
+}
+
+/* Doubled class: wins over .sceneBtn's soft ink, which is declared later. */
+.sceneBtn.retryBtn {
+  height: 24px;
+  color: var(--accent);
+}
+
+.sceneBtn.retryBtn:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--accent) 80%, white);
+}
+
 /* "{Name} is thinking…" shimmer, same as chess. */
 .thinking {
   background: linear-gradient(

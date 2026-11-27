@@ -7,7 +7,9 @@
  *     the inline Red / Random / Yellow side picker and one button ("Launch",
  *     "Start" on the rematch pass) over the empty frame under a scrim;
  *   - active: turn line top-center (inside the board), the borderless resign
- *     flag top-left with an inline confirm;
+ *     flag top-left with an inline confirm; when the character's turn could
+ *     not be finished (aiTurnFailed) the turn line says so and offers a
+ *     borderless Try again (CONNECT4:retry);
  *   - ended: the winning four glow in the frame and the result card with
  *     Rematch rises at the bottom, clear of the winning line.
  * Closing goes through the unified GameSurface "x".
@@ -70,6 +72,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const start = useConnect4Store((s) => s.start);
   const move = useConnect4Store((s) => s.move);
   const resign = useConnect4Store((s) => s.resign);
+  const retry = useConnect4Store((s) => s.retry);
   const hydrate = useConnect4Store((s) => s.hydrate);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
@@ -124,6 +127,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
             game={showLaunch ? null : game}
             companionName={name}
             onDrop={(column) => move(characterId, column)}
+            onRetry={() => void retry(characterId)}
           />
         </div>
 

@@ -35,7 +35,7 @@
 import type { CreditsHardStopEvent, CreditsStatus } from '../shared/ipc';
 
 /** Which product surface ran into the wall. Bot sessions are 'game' + `game`. */
-export type CreditWallSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat' | 'game' | 'unknown';
+export type CreditWallSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat' | 'connect4' | 'battleship' | 'game' | 'unknown';
 
 /** What call hit it: an LLM turn, a voice upstream, the bot's pre-flight
  * summon gate, or a live bot session. */

@@ -42,8 +42,9 @@ describe('game catalog', () => {
     // Five lines, no descriptions: the character knows what chess is, and
     // explaining it would be paid for on every cached turn of every chat and
     // call. If this grows, it is because someone started describing games.
-    // 261122: Forza 4 and Battleship joined the list, so the title line is 20
-    // characters longer; the line count and the shape are unchanged.
+    // 261122: Four in a Row and Fleet Battle joined the list, so the title
+    // line is about 30 characters longer; the line count and the shape are
+    // unchanged.
     const text = renderGamesDirective();
     expect(text.split('\n')).toHaveLength(5);
     expect(text.length).toBeLessThan(460);

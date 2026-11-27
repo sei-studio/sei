@@ -2668,16 +2668,18 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
-  // --- Forza 4 minigame --- see src/shared/connect4Ipc.ts.
+  // --- Four in a Row minigame (internal id CONNECT4) --- see src/shared/connect4Ipc.ts.
   CONNECT4Start(characterId: string, opts?: { playerColor?: 'r' | 'y' | 'random' }): Promise<CONNECT4GameState>;
   CONNECT4GetState(characterId: string): Promise<CONNECT4GameState | null>;
   CONNECT4Move(characterId: string, column: number): Promise<{ ok: boolean; error?: string; state: CONNECT4GameState }>;
   CONNECT4Resign(characterId: string): Promise<CONNECT4GameState>;
   CONNECT4Rematch(characterId: string): Promise<CONNECT4GameState>;
+  /** Run the character's failed turn again (the "Try again" button). */
+  CONNECT4Retry(characterId: string): Promise<CONNECT4GameState>;
   CONNECT4End(characterId: string): Promise<void>;
   onCONNECT4State(cb: (state: CONNECT4GameState) => void): Unsubscribe;
 
-  // --- Battleship minigame --- see src/shared/battleshipIpc.ts.
+  // --- Fleet Battle minigame (internal id BATTLESHIP) --- see src/shared/battleshipIpc.ts.
   BATTLESHIPStart(characterId: string, opts?: { playerStarts?: boolean }): Promise<BATTLESHIPGameState>;
   BATTLESHIPGetState(characterId: string): Promise<BATTLESHIPGameState | null>;
   /** Confirm the player's own fleet (`null` = place it randomly) and start the battle. */
@@ -2685,6 +2687,8 @@ export interface RendererApi {
   BATTLESHIPMove(characterId: string, row: number, col: number): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }>;
   BATTLESHIPResign(characterId: string): Promise<BATTLESHIPGameState>;
   BATTLESHIPRematch(characterId: string): Promise<BATTLESHIPGameState>;
+  /** Run the character's failed turn (placement or shot) again. */
+  BATTLESHIPRetry(characterId: string): Promise<BATTLESHIPGameState>;
   BATTLESHIPEnd(characterId: string): Promise<void>;
   onBATTLESHIPState(cb: (state: BATTLESHIPGameState) => void): Unsubscribe;
 
@@ -4199,18 +4203,19 @@ export const IpcChannel = {
     /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
     snapshotRequest: 'draw:snapshot-request',
   },
-  // Forza 4 (Connect Four) minigame — protocol details in src/shared/connect4Ipc.ts.
+  // Four in a Row minigame (internal id CONNECT4): protocol details in src/shared/connect4Ipc.ts.
   CONNECT4: {
     start: 'CONNECT4:start',
     getState: 'CONNECT4:get-state',
     move: 'CONNECT4:move',
     resign: 'CONNECT4:resign',
     rematch: 'CONNECT4:rematch',
+    retry: 'CONNECT4:retry',
     end: 'CONNECT4:end',
     /** Push: full CONNECT4GameState on every change. */
     state: 'CONNECT4:state',
   },
-  // Battleship minigame: protocol details in src/shared/battleshipIpc.ts.
+  // Fleet Battle minigame (internal id BATTLESHIP): protocol details in src/shared/battleshipIpc.ts.
   BATTLESHIP: {
     start: 'battleship:start',
     getState: 'battleship:get-state',
@@ -4218,6 +4223,7 @@ export const IpcChannel = {
     move: 'battleship:move',
     resign: 'battleship:resign',
     rematch: 'battleship:rematch',
+    retry: 'battleship:retry',
     end: 'battleship:end',
     /** Push: full BATTLESHIPGameState on every change. */
     state: 'battleship:state',

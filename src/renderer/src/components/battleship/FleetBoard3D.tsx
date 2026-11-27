@@ -4,14 +4,21 @@
  *
  * Pure view over the snapshot main pushes (useBattleshipStore), plus the
  * renderer-local fleet draft while the player sets up:
- *   - setup ('preparing'): drag a ship from the harbor onto your waters, drag
- *     a placed ship to move it, click it to rotate, drag it off the board to
- *     send it back. Click-then-click works too (pick up in the harbor, click
- *     a cell), right click rotates the held ship. Rotate / Random / Start
- *     battle sit top-right.
+ *   - setup ('preparing', player fleet not in yet): drag a ship from the
+ *     harbor onto your waters, drag a placed ship to move it, click it to
+ *     rotate, drag it off the board to send it back. Click-then-click works
+ *     too (pick up in the harbor, click a cell), right click rotates the held
+ *     ship. Rotate / Random / Start battle sit top-right.
+ *   - waiting ('preparing', playerFleetPlaced): the character places its own
+ *     fleet with a tool call; both trays show and the turn line reads
+ *     "{name} is placing ships…" until aiFleet is ready and main opens the
+ *     battle.
  *   - battle: aim with the pointer at the companion's waters and click to
  *     fire; the turn line, the shot callouts ("Hit", "{name} sank your
- *     cruiser") and the companion's roaming aim while it thinks.
+ *     cruiser") and the companion's roaming aim while it thinks. Shots are
+ *     attributed by history[].by.
+ *   - aiTurnFailed (placement or shot): "{name} couldn't move" with a
+ *     borderless Try again in the turn line.
  *
  * Keyboard (the viewport is focusable):
  *   setup:  1-5 pick a ship, arrows move it, R rotates, Enter places it (or
@@ -40,14 +47,13 @@ import {
   canFireAt,
   clampedPlacementAt,
   coordName,
-  enemySunkShips,
+  enemyShips,
   lastShotBy,
   placementCellsOf,
   placementOfShip,
   rotated,
   segmentOf,
   shipAt,
-  shotOwners,
   without,
   type GridPos,
 } from './fleetUtil';
@@ -60,6 +66,8 @@ export interface FleetBoard3DProps {
   onFire?: (row: number, col: number) => Promise<boolean> | void;
   /** Confirm the fleet and start the battle; resolves false on failure. */
   onPlaceFleet?: (ships: BATTLESHIPPlacement[]) => Promise<boolean>;
+  /** Run the character's failed turn (placement or shot) again. */
+  onRetry?: () => void;
 }
 
 interface Held {
@@ -90,14 +98,18 @@ const clampPos = (p: GridPos): GridPos => ({
 const samePos = (a: GridPos | null, b: GridPos | null): boolean =>
   a === b || (!!a && !!b && a.row === b.row && a.col === b.col);
 
-export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: FleetBoard3DProps): React.ReactElement {
+export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet, onRetry }: FleetBoard3DProps): React.ReactElement {
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<FleetScene | null>(null);
   const [anchors, setAnchors] = useState<ReturnType<FleetScene['anchors']> | null>(null);
 
-  const placing = game?.status === 'preparing';
+  /** The player is still drawing their fleet (setup UI on). */
+  const placing = game?.status === 'preparing' && !game.playerFleetPlaced;
+  /** The player's fleet is in; the character is still placing its own. */
+  const waiting = game?.status === 'preparing' && game.playerFleetPlaced;
   const active = game?.status === 'active';
+  const aiFailed = !!game && game.status !== 'ended' && !!game.aiTurnFailed;
 
   // ── Setup draft ───────────────────────────────────────────────────────────
   const [draft, setDraft] = useState<BATTLESHIPPlacement[]>([]);
@@ -119,7 +131,7 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
     setBusy(false);
     setSetupErr(false);
     drag.current = null;
-  }, [gameId, status]);
+  }, [gameId, status, game?.playerFleetPlaced]);
 
   const heldPlacement = useMemo(() => {
     if (!held || !cursor) return null;
@@ -141,7 +153,7 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
   }, [shots, gameId]);
 
   const canFire = !!game && active && game.turn === 'player' && !game.aiThinking && !pending;
-  const enemySunk = useMemo(() => (game ? enemySunkShips(game) : []), [game]);
+  const enemyFleet = useMemo(() => (game ? enemyShips(game) : []), [game]);
 
   // ── Shot callouts ─────────────────────────────────────────────────────────
   const [callout, setCallout] = useState<Callout | null>(null);
@@ -151,12 +163,8 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
     const prev = seen.current;
     seen.current = game;
     if (!prev || prev.gameId !== game.gameId || game.history.length <= prev.history.length) return;
-    const i = game.history.length - 1;
-    const rec = game.history[i];
-    // Whose shot: the grid it changed says it directly; turn order otherwise.
-    const enemyChanged = prev.aiVisibleGrid.cells[rec.row]?.[rec.col] !== game.aiVisibleGrid.cells[rec.row]?.[rec.col];
-    const ownChanged = prev.playerGrid.cells[rec.row]?.[rec.col] !== game.playerGrid.cells[rec.row]?.[rec.col];
-    const byPlayer = enemyChanged !== ownChanged ? enemyChanged : shotOwners(game)[i] === 'player';
+    const rec = game.history[game.history.length - 1];
+    const byPlayer = rec.by === 'player';
     const ship = rec.sunkShip ? t(rec.sunkShip) : '';
     const text = byPlayer
       ? rec.sunkShip
@@ -193,15 +201,15 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
 
   const view: FleetView = useMemo(() => {
     if (!game) {
-      return { phase: 'battle', playerShips: [], playerCells: EMPTY_CELLS, enemyCells: EMPTY_CELLS, enemySunk: [], lastAiShot: null };
+      return { phase: 'battle', playerShips: [], playerCells: EMPTY_CELLS, enemyCells: EMPTY_CELLS, enemyShips: [], lastAiShot: null };
     }
-    if (game.status === 'preparing') {
+    if (game.status === 'preparing' && !game.playerFleetPlaced) {
       return {
         phase: 'placing',
         playerShips: draft.map((placement) => ({ placement, sunk: false })),
         playerCells: EMPTY_CELLS,
         enemyCells: EMPTY_CELLS,
-        enemySunk: [],
+        enemyShips: [],
         lastAiShot: null,
       };
     }
@@ -210,10 +218,10 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
       playerShips: game.playerGrid.ships.map((s) => ({ placement: placementOfShip(s), sunk: s.sunk })),
       playerCells: game.playerGrid.cells,
       enemyCells: game.aiVisibleGrid.cells,
-      enemySunk,
+      enemyShips: enemyFleet,
       lastAiShot: game.status === 'active' ? lastShotBy(game, 'ai') : null,
     };
-  }, [game, draft, enemySunk]);
+  }, [game, draft, enemyFleet]);
 
   // First paint is not animated (resume); every later change is.
   const painted = useRef<string | null>(null);
@@ -246,8 +254,8 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
   }, [scene, status]);
 
   useEffect(() => {
-    scene?.setThinking(!!game && active && game.aiThinking);
-  }, [scene, active, game?.aiThinking, game]);
+    scene?.setThinking(!!game && active && game.aiThinking && !aiFailed);
+  }, [scene, active, game?.aiThinking, aiFailed, game]);
 
   // ── Setup intents ─────────────────────────────────────────────────────────
   function pickUp(name: BATTLESHIPShipName, grab: number, sticky: boolean): void {
@@ -451,17 +459,22 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const aiPlacing = waiting && !aiFailed;
   const turnLabel = !game
     ? ''
-    : placing
-      ? fleetReady
-        ? t('Fleet ready')
-        : t('Place your ships')
-      : game.aiThinking
-        ? t('{name} is thinking…', { name: companionName })
-        : game.turn === 'player'
-          ? t('Your turn')
-          : t("{name}'s turn", { name: companionName });
+    : aiFailed
+      ? t("{name} couldn't move", { name: companionName })
+      : waiting
+        ? t('{name} is placing ships…', { name: companionName })
+        : placing
+          ? fleetReady
+            ? t('Fleet ready')
+            : t('Place your ships')
+          : game.aiThinking
+            ? t('{name} is thinking…', { name: companionName })
+            : game.turn === 'player'
+              ? t('Your turn')
+              : t("{name}'s turn", { name: companionName });
 
   let liveHint = '';
   if (keyboard && cursor) {
@@ -481,7 +494,8 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
       ? t('Fleet setup. Keys 1 to 5 pick a ship, arrows move it, R rotates, Enter places it.')
       : t('Fleet Battle board. Arrow keys aim at the enemy waters, Enter fires.');
 
-  const showTurn = !!game && (placing || active);
+  const showTurn = !!game && (placing || waiting || active);
+  const shimmer = (active && !!game?.aiThinking && !aiFailed) || aiPlacing;
   const pointerCursor = (placing && (held || drag.current)) || (active && canFire && cursor);
 
   return (
@@ -505,9 +519,32 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet }: Flee
     >
       {showTurn ? (
         <div className={hud.topCenter}>
-          <div className={game?.aiThinking && active ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
-            {turnLabel}
-          </div>
+          {aiFailed ? (
+            <div className={hud.turnRow}>
+              <div className={hud.turnChip} role="status">
+                {turnLabel}
+              </div>
+              {onRetry ? (
+                <button
+                  type="button"
+                  className={`${hud.sceneBtn} ${hud.retryBtn}`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetry();
+                  }}
+                >
+                  {t('Try again')}
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className={shimmer ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
+              {turnLabel}
+            </div>
+          )}
           {placing ? (
             setupErr ? (
               <div className={hud.subTag} role="alert">

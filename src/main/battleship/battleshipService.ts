@@ -1,22 +1,37 @@
 /**
- * Battleship (Battleship) minigame service (main process): authoritative
- * game state + the character's shot picker.
+ * Fleet Battle minigame service (main process, internal id BATTLESHIP):
+ * authoritative game state + the character's own turns.
  *
- * Two 10x10 grids per character (player + AI), 5 ships each placed randomly at
- * start. Players alternate firing (row, col); win when all opposing ships are
- * sunk.
+ * Two 10x10 grids per character (player + character), five ships each. The
+ * game opens in `preparing`: the player places their fleet (placeFleet) while
+ * the character places its own with ONE `place_fleet` tool call, validated by
+ * the rules (fleetProblem) and retried like a move. The battle opens once both
+ * fleets are ready; then the two alternate shots and the first to sink every
+ * opposing ship wins.
  *
- * The AI's shot is chosen by the LLM from a `fire(row, col)` tool — no external
- * engine, no model download.
+ * The character plays for real (261127 rewrite, docs/agents/battleship.md):
+ *   - every shot is its own `fire(cell)` call ("B7", as the board labels
+ *     cells) through the shared board-game turn runner
+ *     (src/main/minigames/boardTurn.ts): persona, memory and chat history in
+ *     the prompt like chess, tool results as real tool_result blocks;
+ *   - the engine only enforces the rules. It never shoots or places ships for
+ *     the character: a rejected call goes back as a tool error, a failed turn
+ *     is retried (MOVE_ATTEMPTS), and after that the game stops in
+ *     `aiTurnFailed` until the player presses Try again;
+ *   - plain text it writes is table talk, spoken like chess, landing together
+ *     with the shot.
+ *
+ * Turns run on one fsm.js priority queue per session, single-flight like
+ * chess: P1 player chat, P2 the character's placement or shot. No idle
+ * chatter. Each turn carries a token, so a shot from a stale turn can never
+ * land during the player's turn.
  *
  * Mutually exclusive with Minecraft summon via deps.isSummoned.
  */
 
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import type { ChatMessage } from '../../shared/ipc';
+import type { ChatMessage, ChatSendResult } from '../../shared/ipc';
 import type {
-  BATTLESHIPCell,
   BATTLESHIPGameState,
   BATTLESHIPGrid,
   BATTLESHIPGameStatus,
@@ -28,38 +43,59 @@ import type {
 } from '../../shared/battleshipIpc';
 import {
   BATTLESHIP_ERR_MC_ACTIVE,
+  BATTLESHIP_SHIP_NAMES,
+  SHIP_SIZES,
+  battleshipCellName,
+  fleetProblem,
+  parseBattleshipCell,
   placementCells,
-  placementFits,
   randomFleetPlacement,
 } from '../../shared/battleshipIpc';
-import { buildLlmProvider } from '../llm';
+import type { MinigameTurnFailure } from '../../shared/minigameTurn';
 import { loadAnalytics } from '../lazyAnalytics';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
 import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
-import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
-import { paths } from '../paths';
 import { isCallActive } from '../voice/callState';
 import { foldIfDue } from '../chat/continuity';
-import { toMessages } from '../chat/transcript';
-import { REMEMBER_TOOL } from '../chat/chatPrompts';
+import { REMEMBER_TOOL, clockNow } from '../chat/chatPrompts';
+import { CHAT_ABORTED } from '../chat/chatService';
+import * as chatStore from '../chat/chatStore';
+import { raiseUsageLimitPopup } from '../chat/usageLimit';
 import { companionLanguageFor } from '../companionLanguage';
-import { renderAdoptedLanguageNote, renderLanguageDirective } from '../../bot/brain/promptLibrary.js';
-import type { LlmMessage } from '../llm/types';
+import { playSummaryText } from '../chat/playSummary';
+import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
+import {
+  runBoardTurn,
+  runWithAttempts,
+  alreadyMovedResult,
+  SAY_PROPERTY,
+  type BoardToolUse,
+  type BoardTurnArgs,
+  type BoardTurnKind,
+  type ToolOutcome,
+} from '../minigames/boardTurn';
 
 const ROWS = 10;
 const COLS = 10;
-const SHIP_NAMES: BATTLESHIPShipName[] = ['carrier', 'battleship', 'cruiser', 'submarine', 'destroyer'];
-const SHIP_SIZES: Record<BATTLESHIPShipName, number> = {
-  carrier: 5,
-  battleship: 4,
-  cruiser: 3,
-  submarine: 3,
-  destroyer: 2,
-};
+
+/** User-facing and model-facing name (never the trademarked one). */
+export const BATTLESHIP_GAME_NAME = 'Fleet Battle';
+const BATTLESHIP_GAME_NAME_ZH = '舰队对战';
+
+const MAX_HOPS = 4;
+/** Room for a little private working-out, one line of talk and the tool call. */
+const SHOT_MAX_TOKENS = 700;
+/** Five ships of JSON, some private working-out and a line of talk. */
+const PLACE_MAX_TOKENS = 1000;
+const NO_IDLE_MS = 2_000_000_000;
+/** How many of its own recent move lines the turn block shows it. */
+const RECENT_LINES = 4;
 
 const sessions = new Map<string, Session>();
 let deps: BATTLESHIPDeps | null = null;
+let providerOverride: BoardTurnArgs['provider'];
+let sleepOverride: ((ms: number) => Promise<void>) | undefined;
 
 export interface BATTLESHIPDeps {
   pushState: (state: BATTLESHIPGameState) => void;
@@ -72,28 +108,59 @@ export interface BATTLESHIPStartOpts {
   playerStarts?: boolean;
 }
 
+interface Queue {
+  enqueue: (priority: number, event: string, data?: unknown) => void;
+  dispose: () => void;
+}
+
+type AiTurnKind = 'place' | 'shot';
+
 interface Session {
   gameId: string;
   characterId: string;
-  playerGrid: BATTLESHIPGrid;     // player's own ships (AI shoots here)
-  aiGrid: BATTLESHIPGrid;          // AI's own ships (hidden from renderer)
-  aiVisibleGrid: BATTLESHIPGrid;   // player's view: hits/misses only
+  playerGrid: BATTLESHIPGrid;     // player's own ships (the character shoots here)
+  aiGrid: BATTLESHIPGrid;          // the character's ships (hidden from the renderer)
+  aiVisibleGrid: BATTLESHIPGrid;   // player's view of the character's board
   turn: 'player' | 'ai';
   status: BATTLESHIPGameStatus;
-  /** Who opens once the player confirms their fleet (placement phase). */
-  pendingPlayerStarts: boolean;
+  playerStarts: boolean;
+  playerFleetPlaced: boolean;
+  aiFleet: 'placing' | 'ready' | 'failed';
   aiThinking: boolean;
-  pendingAiMove: { row: number; col: number } | null;
   result: BATTLESHIPResult | null;
   history: BATTLESHIPShotRecord[];
-  shotsFired: number;
+  playerShots: number;
+  aiShots: number;
   startedAt: number;
-  turnCtrl: AbortController | null;
-  turnSeq: number;
-  /** When the current AI turn was armed (staleness check for a lost promise). */
-  aiTurnStartedAt?: number;
-  spoke: boolean;
+  battleStartedAt: number | null;
   lastActivityAt: number;
+  turnCtrl: AbortController | null;
+  /** Bumped when the game ends: every turn begun before is stale. */
+  turnSeq: number;
+  /** Bumped per character turn (placement or shot). */
+  moveToken: number;
+  /** The moveToken whose move is on the board (a retry never moves twice). */
+  appliedToken: number;
+  /** The character said a line with its previous move (turn-block nudge toward quiet moves). */
+  talkedLastMove: boolean;
+  /** The last few lines said with its moves, shown back to it so it does not repeat them. */
+  recentLines: string[];
+  aiTurnFailed: MinigameTurnFailure | null;
+  creditQuiet: boolean;
+  spoke: boolean;
+  clock: string;
+  gameLog: Array<{ ts: number; text: string }>;
+  queue: Queue | null;
+  chatBuffer: Array<{ voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
+  firstMoveSent: boolean;
+  stats: {
+    llmMoves: number;
+    retries: number;
+    illegal: number;
+    failedTurns: number;
+    retryClicks: number;
+    chatReplies: number;
+  };
 }
 
 export function initBATTLESHIPService(d: BATTLESHIPDeps): void {
@@ -101,7 +168,7 @@ export function initBATTLESHIPService(d: BATTLESHIPDeps): void {
 }
 
 function requireDeps(): BATTLESHIPDeps {
-  if (!deps) throw new Error('Battleship service not initialized');
+  if (!deps) throw new Error('Fleet Battle service not initialized');
   return deps;
 }
 
@@ -115,75 +182,75 @@ function emptyGrid(): BATTLESHIPGrid {
 function applyFleet(grid: BATTLESHIPGrid, fleet: ReadonlyArray<BATTLESHIPPlacement>): void {
   grid.ships = [];
   for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      grid.cells[r][c] = 'empty';
-    }
+    for (let c = 0; c < COLS; c++) grid.cells[r][c] = 'empty';
   }
   for (const placement of fleet) {
     const cells = placementCells(placement);
-    for (const cell of cells) {
-      grid.cells[cell.row][cell.col] = 'ship';
-    }
-    grid.ships.push({
-      name: placement.name,
-      size: SHIP_SIZES[placement.name],
-      cells,
-      sunk: false,
-    });
+    for (const cell of cells) grid.cells[cell.row][cell.col] = 'ship';
+    grid.ships.push({ name: placement.name, size: SHIP_SIZES[placement.name], cells, sunk: false });
   }
 }
 
-function placeShipsRandomly(grid: BATTLESHIPGrid): void {
-  applyFleet(grid, randomFleetPlacement());
-}
-
-/** True when the fleet covers all five names exactly once, on the board, without overlaps. */
-function isCompleteFleet(fleet: ReadonlyArray<BATTLESHIPPlacement>): boolean {
-  if (fleet.length !== SHIP_NAMES.length) return false;
-  const seen = new Set<BATTLESHIPPlacement['name']>();
-  let occupied: Array<{ row: number; col: number }> = [];
-  for (const placement of fleet) {
-    if (seen.has(placement.name)) return false;
-    seen.add(placement.name);
-    if (!placementFits(placement, occupied)) return false;
-    occupied = occupied.concat(placementCells(placement));
-  }
-  return SHIP_NAMES.every((name) => seen.has(name));
-}
-
-function visibleFromGrid(grid: BATTLESHIPGrid): BATTLESHIPGrid {
+function cloneGrid(grid: BATTLESHIPGrid): BATTLESHIPGrid {
   return {
-    cells: grid.cells.map((row) => row.map((cell) => (cell === 'ship' ? 'empty' : cell))),
-    ships: [],
+    cells: grid.cells.map((row) => row.slice()),
+    ships: grid.ships.map((sh) => ({ ...sh, cells: sh.cells.map((c) => ({ ...c })) })),
   };
 }
 
 function snapshot(s: Session): BATTLESHIPGameState {
+  const aiVisible = cloneGrid(s.aiVisibleGrid);
+  // The character's ships are revealed only once the game is over.
+  aiVisible.ships = s.status === 'ended' ? cloneGrid(s.aiGrid).ships : [];
   return {
     gameId: s.gameId,
     characterId: s.characterId,
     status: s.status,
-    playerGrid: s.playerGrid,
-    aiVisibleGrid: s.aiVisibleGrid,
+    playerGrid: cloneGrid(s.playerGrid),
+    aiVisibleGrid: aiVisible,
     turn: s.turn,
     aiThinking: s.aiThinking,
-    pendingAiMove: s.pendingAiMove,
+    pendingAiMove: null,
     result: s.result,
-    history: s.history,
-    shotsFired: s.shotsFired,
+    history: s.history.map((h) => ({ ...h })),
+    shotsFired: s.playerShots + s.aiShots,
+    playerShots: s.playerShots,
+    aiShots: s.aiShots,
+    playerStarts: s.playerStarts,
+    playerFleetPlaced: s.playerFleetPlaced,
+    aiFleet: s.aiFleet,
+    aiTurnFailed: s.aiTurnFailed,
   };
 }
 
 function push(s: Session): BATTLESHIPGameState {
   const state = snapshot(s);
-  // A dead window must never be able to stall a turn: a throwing push used to
-  // escape the AI turn's catch (the fallback pushed too) and leave the board
-  // armed on the AI forever.
+  // A dead window must never be able to throw into a turn.
   try {
     requireDeps().pushState(state);
   } catch { /* window gone; the next getState reconciles */ }
   return state;
 }
+
+function capture(event: string, props: Record<string, unknown>): void {
+  void (async () => {
+    try {
+      const { capture: cap } = await loadAnalytics();
+      cap(event, props);
+    } catch { /* analytics is never load-bearing */ }
+  })();
+}
+
+function captureError(characterId: string, cls: string): void {
+  void (async () => {
+    try {
+      const { captureSurfaceError } = await loadAnalytics();
+      captureSurfaceError('battleship', cls, characterId);
+    } catch { /* analytics is never load-bearing */ }
+  })();
+}
+
+// ── public api (wired to IPC handlers) ───────────────────────────────────────
 
 export function isBATTLESHIPActive(characterId: string): boolean {
   const s = sessions.get(characterId);
@@ -197,21 +264,22 @@ export function getBATTLESHIPState(characterId: string): BATTLESHIPGameState | n
 
 export async function startBATTLESHIP(
   characterId: string,
-  opts?: BATTLESHIPStartOpts,
+  opts?: BATTLESHIPStartOpts & { rematch?: boolean },
 ): Promise<BATTLESHIPGameState> {
   const d = requireDeps();
   if (d.isSummoned(characterId)) {
-    throw new Error(`${BATTLESHIP_ERR_MC_ACTIVE}: disconnect the Minecraft session to play Battleship`);
+    throw new Error(`${BATTLESHIP_ERR_MC_ACTIVE}: disconnect the Minecraft session to play ${BATTLESHIP_GAME_NAME}`);
   }
   const existing = sessions.get(characterId);
   if (existing && existing.status !== 'ended') {
     return snapshot(existing);
   }
-  if (existing) sessions.delete(characterId);
   const startGuard = beginSessionStart();
+  // A new game over a finished one is a rematch, whichever button started it.
+  const isRematch = opts?.rematch === true || !!existing;
+  if (existing) sessions.delete(characterId);
 
   const playerStarts = opts?.playerStarts ?? true;
-
   const s: Session = {
     gameId: randomUUID(),
     characterId,
@@ -220,69 +288,85 @@ export async function startBATTLESHIP(
     aiVisibleGrid: emptyGrid(),
     turn: playerStarts ? 'player' : 'ai',
     status: 'preparing',
-    pendingPlayerStarts: playerStarts,
+    playerStarts,
+    playerFleetPlaced: false,
+    aiFleet: 'placing',
     aiThinking: false,
-    pendingAiMove: null,
     result: null,
     history: [],
-    shotsFired: 0,
+    playerShots: 0,
+    aiShots: 0,
     startedAt: Date.now(),
+    battleStartedAt: null,
+    lastActivityAt: Date.now(),
     turnCtrl: null,
     turnSeq: 0,
+    moveToken: 0,
+    appliedToken: 0,
+    talkedLastMove: false,
+    recentLines: [],
+    aiTurnFailed: null,
+    creditQuiet: false,
     spoke: false,
-    lastActivityAt: Date.now(),
+    clock: clockNow(),
+    gameLog: [],
+    queue: null,
+    chatBuffer: [],
+    firstMoveSent: false,
+    stats: { llmMoves: 0, retries: 0, illegal: 0, failedTurns: 0, retryClicks: 0, chatReplies: 0 },
   };
-  // The player's own fleet is empty until they confirm their placement;
-  // the AI's fleet is hidden and random.
-  placeShipsRandomly(s.aiGrid);
-  s.aiVisibleGrid = visibleFromGrid(s.aiGrid);
-  sessions.set(characterId, s);
+  s.queue = createPriorityQueue({
+    idleFallbackMs: NO_IDLE_MS,
+    onDispatch: (event: string, data: unknown) => dispatch(s, event, data as { token?: number } | undefined),
+    logger: console,
+  }) as unknown as Queue;
 
   if (!startGuard.stillValid()) {
-    sessions.delete(characterId);
+    s.queue.dispose();
     throw accountSwitchingError();
   }
+  sessions.set(characterId, s);
   push(s);
 
-  void (async () => {
-    try {
-      const { capture } = await loadAnalytics();
-      capture('battleship_game_started', {
-        character_id: characterId,
-        player_starts: playerStarts,
-      });
-    } catch { /* analytics is never load-bearing */ }
-  })();
+  capture('battleship_game_started', {
+    character_id: characterId,
+    player_starts: playerStarts,
+    rematch: isRematch,
+  });
 
+  // The character places its own fleet while the player places theirs.
+  enqueueAiTurn(s);
   return snapshot(s);
 }
 
 /**
- * Confirm the player's own fleet and open the battle. `ships` is the fleet the
- * renderer drew (all five ships); `null` means "place it randomly". The phase
- * exists because the board used to be filled behind the player's back.
+ * Confirm the player's own fleet. `ships` is the fleet the renderer drew (all
+ * five ships); `null` means "place it randomly" (the player's Random button).
+ * The battle opens once the character's fleet is ready too.
  */
 export async function placeFleet(
   characterId: string,
   ships: BATTLESHIPPlacement[] | null,
 ): Promise<BATTLESHIPGameState> {
   const s = sessions.get(characterId);
-  if (!s || s.status !== 'preparing') {
-    throw new Error('no Battleship game is waiting for ship placement');
+  if (!s || s.status !== 'preparing' || s.playerFleetPlaced) {
+    throw new Error(`no ${BATTLESHIP_GAME_NAME} game is waiting for your ships`);
   }
   const fleet = ships ?? randomFleetPlacement();
-  if (!isCompleteFleet(fleet)) {
-    throw new Error('invalid Battleship fleet placement');
-  }
+  const problem = fleetProblem(fleet);
+  if (problem) throw new Error(`invalid ${BATTLESHIP_GAME_NAME} fleet: ${problem}`);
 
   applyFleet(s.playerGrid, fleet);
-  s.status = 'active';
-  s.startedAt = Date.now();
+  s.playerFleetPlaced = true;
   s.lastActivityAt = Date.now();
-  s.turn = s.pendingPlayerStarts ? 'player' : 'ai';
+  capture('battleship_fleet_placed', {
+    character_id: s.characterId,
+    by: 'player',
+    random: ships === null,
+    ms_since_start: Date.now() - s.startedAt,
+  });
+  maybeBeginBattle(s);
   push(s);
-
-  if (s.turn !== 'player') enqueueAiMove(s);
   return snapshot(s);
 }
 
@@ -293,39 +377,58 @@ export async function playerMove(
 ): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }> {
   const s = sessions.get(characterId);
   if (!s || s.status !== 'active') {
-    throw new Error('no active Battleship game');
+    throw new Error(`no active ${BATTLESHIP_GAME_NAME} game`);
   }
-  rearmIfWedged(s);
-  if (s.aiThinking || s.pendingAiMove || s.turn !== 'player') {
+  if (s.aiThinking || s.turn !== 'player') {
     return { ok: false, error: 'not your turn', state: snapshot(s) };
   }
-  if (row < 0 || row >= ROWS || col < 0 || col >= COLS) {
+  if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row >= ROWS || col < 0 || col >= COLS) {
     return { ok: false, error: 'out of bounds', state: snapshot(s) };
   }
-  const already = s.aiVisibleGrid.cells[row][col];
-  if (already === 'hit' || already === 'miss') {
+  if (s.aiVisibleGrid.cells[row][col] !== 'empty') {
     return { ok: false, error: 'already fired there', state: snapshot(s) };
   }
-  applyPlayerShot(s, row, col);
-  s.lastActivityAt = Date.now();
-  s.turn = nextTurn(s);
-  const state = push(s);
-  if (checkGameOver(s)) return { ok: true, state: snapshot(s) };
-  enqueueAiMove(s);
-  return { ok: true, state };
+  applyShot(s, 'player', row, col);
+  noteFirstMove(s, 'player');
+  if (allShipsSunk(s.aiGrid)) {
+    endSession(s, { winner: 'player', reason: 'all-ships-sunk' });
+    return { ok: true, state: snapshot(s) };
+  }
+  s.turn = 'ai';
+  enqueueAiTurn(s);
+  return { ok: true, state: snapshot(s) };
 }
 
+/** Give up. Allowed during placement too (the game simply ends). */
 export async function resign(characterId: string): Promise<BATTLESHIPGameState> {
-  const s = requireActive(characterId);
+  const s = sessions.get(characterId);
+  if (!s || s.status === 'ended') throw new Error(`no ${BATTLESHIP_GAME_NAME} game to resign`);
   endSession(s, { winner: 'ai', reason: 'resign' });
   return snapshot(s);
 }
 
+/** New game against the same character; the other side fires first this time. */
 export async function rematch(characterId: string): Promise<BATTLESHIPGameState> {
   const old = sessions.get(characterId);
   if (!old || old.status !== 'ended') throw new Error('no finished game to rematch');
-  sessions.delete(characterId);
-  return startBATTLESHIP(characterId, { playerStarts: old.turn === 'player' });
+  return startBATTLESHIP(characterId, { playerStarts: !old.playerStarts, rematch: true });
+}
+
+/** Try again after a failed character turn (placement or shot). */
+export async function retryAiTurn(characterId: string): Promise<BATTLESHIPGameState> {
+  const s = sessions.get(characterId);
+  if (!s || s.status === 'ended') throw new Error(`no ${BATTLESHIP_GAME_NAME} game`);
+  if (!s.aiTurnFailed || s.aiThinking || !aiTurnKind(s)) return snapshot(s);
+  s.stats.retryClicks++;
+  capture('battleship_turn_retry', {
+    character_id: s.characterId,
+    reason: s.aiTurnFailed.reason,
+    turn_kind: aiTurnKind(s),
+  });
+  s.creditQuiet = false;
+  if (s.aiFleet === 'failed') s.aiFleet = 'placing';
+  enqueueAiTurn(s);
+  return snapshot(s);
 }
 
 export async function endBATTLESHIP(characterId: string): Promise<void> {
@@ -337,86 +440,454 @@ export async function endBATTLESHIP(characterId: string): Promise<void> {
   sessions.delete(characterId);
 }
 
+/**
+ * Chat while a game is open (routed from chat:send). Persists the player's
+ * line, queues ONE reply turn (consecutive sends coalesce) and resolves once
+ * it ran. Null when there is no live game, so normal chat takes it.
+ */
+export async function handlePlayerChat(args: {
+  characterId: string;
+  text: string;
+  replyTo?: ChatMessage['replyTo'];
+  voiceCall?: boolean;
+}): Promise<ChatSendResult | null> {
+  const s = sessions.get(args.characterId);
+  if (!s || s.status === 'ended' || !s.queue) return null;
+  const userMsg: ChatMessage = {
+    id: randomUUID(),
+    role: 'user',
+    text: args.text,
+    ts: Date.now(),
+    ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+    ...(args.voiceCall ? { voice: true } : {}),
+  };
+  await chatStore.appendMessage(s.characterId, userMsg);
+  s.lastActivityAt = Date.now();
+  s.spoke = true;
+  return await new Promise<ChatSendResult>((resolve) => {
+    s.chatBuffer.push({ voiceCall: args.voiceCall === true, resolve });
+    if (!s.queue) {
+      flushChatBuffer(s);
+      return;
+    }
+    s.queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true });
+  });
+}
+
+// ── turn flow ────────────────────────────────────────────────────────────────
+
+/** What the character owes right now, or null when it is not its turn. */
+function aiTurnKind(s: Session): AiTurnKind | null {
+  if (s.status === 'preparing' && s.aiFleet !== 'ready') return 'place';
+  if (s.status === 'active' && s.turn === 'ai') return 'shot';
+  return null;
+}
+
+function maybeBeginBattle(s: Session): void {
+  if (s.status !== 'preparing' || !s.playerFleetPlaced || s.aiFleet !== 'ready') return;
+  s.status = 'active';
+  s.battleStartedAt = Date.now();
+  s.turn = s.playerStarts ? 'player' : 'ai';
+  s.gameLog.push({
+    ts: Date.now(),
+    text: `(game) Both fleets are placed. The battle starts; ${s.playerStarts ? 'they fire' : 'you fire'} first.`,
+  });
+  if (s.turn === 'ai') enqueueAiTurn(s);
+}
+
+function enqueueAiTurn(s: Session): void {
+  if (!aiTurnKind(s) || s.aiThinking) return;
+  s.aiThinking = true;
+  s.aiTurnFailed = null;
+  const token = ++s.moveToken;
+  push(s);
+  s.queue?.enqueue(Priority.P2_MOVEMENT, 'sei:your_move', { token });
+}
+
+async function dispatch(s: Session, event: string, data: { token?: number } | undefined): Promise<void> {
+  if (s.status === 'ended') {
+    flushChatBuffer(s);
+    return;
+  }
+  if (event === 'sei:your_move') await dispatchAiTurn(s, data?.token ?? -1);
+  else if (event === 'sei:chat_received') await dispatchChat(s);
+  // sei:idle never does anything here: no idle chatter at the board.
+}
+
+function aiTurnLive(s: Session, token: number, seq: number, kind: AiTurnKind): boolean {
+  return (
+    sessions.get(s.characterId) === s &&
+    s.turnSeq === seq &&
+    s.moveToken === token &&
+    aiTurnKind(s) === kind
+  );
+}
+
+async function dispatchAiTurn(s: Session, token: number): Promise<void> {
+  const seq = s.turnSeq;
+  const kind = aiTurnKind(s);
+  if (!kind || !aiTurnLive(s, token, seq, kind)) return;
+  const voiceCall = isCallActive(s.characterId);
+  const contract = await contractBlock(s);
+  const live = (): boolean => aiTurnLive(s, token, seq, kind);
+  const outcome = await runWithAttempts({
+    isLive: live,
+    onUsageLimit: (err) => raiseUsageLimitPopup(err, 'battleship'),
+    onAttemptError: (i, err, cls) => {
+      console.error(`[sei/battleship] ${kind} turn failed (attempt ${i + 1}, ${cls}): ${describeErr(err)}`);
+      captureError(s.characterId, `${kind === 'place' ? 'place' : 'move'}_turn_${cls}`);
+    },
+    sleep: sleepOverride,
+    attempt: async (_i, retryNote) => {
+      if (s.appliedToken === token) return alreadyMovedResult();
+      try {
+        const r = await runBoardTurn({
+          surface: 'battleship',
+          characterId: s.characterId,
+          kind: kind === 'place' ? 'place' : 'move',
+          contract,
+          turnBlock: turnBlock(s, kind === 'place' ? 'place' : 'move', retryNote),
+          gameLog: s.gameLog,
+          clock: s.clock,
+          tools: BATTLESHIP_TOOLS,
+          voiceCall,
+          maxHops: MAX_HOPS,
+          maxTokens: kind === 'place' ? PLACE_MAX_TOKENS : SHOT_MAX_TOKENS,
+          isStale: () => !live(),
+          onTool: (tu) => (kind === 'place' ? onPlaceTool(s, tu, live) : onFireTool(s, tu, live)),
+          noMoveNudge:
+            kind === 'place'
+              ? 'Your ships are not placed yet. Call place_fleet() with all five ships now.'
+              : 'You have not fired yet. Call fire() with the cell now.',
+          registerAbort: (ctrl, done) => registerAbort(s, ctrl, done),
+          pushChatMessage: requireDeps().pushChatMessage,
+          provider: providerOverride,
+        });
+        if (r.spoken.length) s.spoke = true;
+        return r;
+      } catch (err) {
+        // The move landed and something after it threw: the turn is done.
+        if (s.appliedToken === token && live()) return alreadyMovedResult();
+        throw err;
+      }
+    },
+  });
+
+  if (outcome.kind === 'aborted') {
+    if (s.moveToken === token && s.status !== 'ended' && s.aiThinking) {
+      s.aiThinking = false;
+      push(s);
+    }
+    return;
+  }
+  s.stats.illegal += outcome.illegal;
+  if (outcome.kind === 'moved') {
+    s.stats.llmMoves++;
+    s.stats.retries += outcome.attempts - 1;
+    s.talkedLastMove = outcome.result.spoken.length > 0;
+    for (const m of outcome.result.spoken) s.recentLines.push(m.text);
+    s.recentLines = s.recentLines.slice(-RECENT_LINES);
+    s.aiThinking = false;
+    if (kind === 'place') {
+      s.aiFleet = 'ready';
+      maybeBeginBattle(s);
+      push(s);
+    } else if (allShipsSunk(s.playerGrid)) {
+      endSession(s, { winner: 'ai', reason: 'all-ships-sunk' });
+    } else {
+      s.turn = 'player';
+      push(s);
+    }
+    return;
+  }
+  // Every attempt failed: stop in a clear state. Never an engine move.
+  s.stats.retries += outcome.failure.attempts - 1;
+  s.stats.failedTurns++;
+  if (outcome.failure.reason === 'credit_wall') s.creditQuiet = true;
+  if (kind === 'place') s.aiFleet = 'failed';
+  s.aiThinking = false;
+  s.aiTurnFailed = outcome.failure;
+  push(s);
+  console.error(
+    `[sei/battleship] character could not finish its ${kind}: ${outcome.failure.reason} after ${outcome.failure.attempts} attempt(s)`,
+  );
+  capture('battleship_turn_failed', {
+    character_id: s.characterId,
+    turn_kind: kind,
+    reason: outcome.failure.reason,
+    attempts: outcome.failure.attempts,
+    error_class: outcome.errorClass ?? 'none',
+    shot_number: s.aiShots + 1,
+  });
+}
+
+/** The character's place_fleet() call: validated, never completed for it. */
+async function onPlaceTool(s: Session, tu: BoardToolUse, live: () => boolean): Promise<ToolOutcome> {
+  if (tu.name !== 'place_fleet') {
+    return {
+      note: `The battle has not started yet; "${tu.name}" does nothing now. Place your ships with place_fleet().`,
+      isError: true,
+    };
+  }
+  const parsed = parseFleetInput(tu.input);
+  if (typeof parsed === 'string') {
+    return { note: `${parsed} Call place_fleet() again with all five ships.`, isError: true, illegal: true };
+  }
+  const problem = fleetProblem(parsed);
+  if (problem) {
+    return { note: `${problem} Call place_fleet() again with all five ships.`, isError: true, illegal: true };
+  }
+  if (!live()) return { note: 'The game has moved on; this does nothing now.', isError: true };
+  applyFleet(s.aiGrid, parsed);
+  s.appliedToken = s.moveToken; // live() held: this is the turn's token
+  // aiFleet turns 'ready' (and the battle may open) only once the runner
+  // returns: changing it here made the turn's own stale check fire.
+  s.gameLog.push({
+    ts: Date.now(),
+    text: `(game) You placed your fleet: ${parsed.map((p) => `${p.name} ${describePlacement(p)}`).join('; ')}.`,
+  });
+  capture('battleship_fleet_placed', {
+    character_id: s.characterId,
+    by: 'ai',
+    ms_since_start: Date.now() - s.startedAt,
+  });
+  return {
+    note: s.playerFleetPlaced
+      ? 'Your fleet is placed. Both fleets are ready and the battle begins.'
+      : 'Your fleet is placed. Waiting for them to place theirs.',
+    moved: true,
+  };
+}
+
+/** The character's fire() call: rules only, never a substitute cell. */
+async function onFireTool(s: Session, tu: BoardToolUse, live: () => boolean): Promise<ToolOutcome> {
+  if (tu.name !== 'fire') {
+    return { note: `The tool "${tu.name}" does nothing during the battle. Use fire() to shoot.`, isError: true };
+  }
+  const raw = (tu.input as { cell?: unknown } | undefined)?.cell;
+  const cell = parseBattleshipCell(raw);
+  if (!cell) {
+    return {
+      note: `"${String(raw)}" is not a cell. Name it by row letter A to J and column 1 to 10, like B7. Call fire() again.`,
+      isError: true,
+      illegal: true,
+    };
+  }
+  const here = s.playerGrid.cells[cell.row][cell.col];
+  if (here === 'hit' || here === 'miss' || here === 'sunk') {
+    return {
+      note: `You already fired at ${battleshipCellName(cell.row, cell.col)} (it was a ${here === 'miss' ? 'miss' : 'hit'}). Pick a cell you have not fired at and call fire() again.`,
+      isError: true,
+      illegal: true,
+    };
+  }
+  if (!live()) return { note: 'It is not your turn any more; this does nothing.', isError: true };
+  const shot = applyShot(s, 'ai', cell.row, cell.col);
+  s.appliedToken = s.moveToken; // live() held: this is the turn's token
+  noteFirstMove(s, 'ai');
+  // The shot shows at once; the turn passes only after the runner returns
+  // (its table talk lands first), see dispatchAiTurn.
+  push(s);
+  const name = battleshipCellName(cell.row, cell.col);
+  const note = shot.sunkShip
+    ? `${name}: hit, and you sank their ${shot.sunkShip}.${allShipsSunk(s.playerGrid) ? ' That was their last ship.' : ''}`
+    : shot.hit
+      ? `${name}: hit.`
+      : `${name}: miss.`;
+  return { note: `${note} Your shot is done for this turn.`, moved: true };
+}
+
+/** place_fleet input to placements, or a plain reason it cannot be read. */
+function parseFleetInput(input: unknown): BATTLESHIPPlacement[] | string {
+  const ships = (input as { ships?: unknown } | undefined)?.ships;
+  if (!Array.isArray(ships)) return 'Send "ships" as a list of your five ships.';
+  const out: BATTLESHIPPlacement[] = [];
+  for (const raw of ships) {
+    const entry = raw as { ship?: unknown; start?: unknown; direction?: unknown } | null;
+    const name = String(entry?.ship ?? '').trim().toLowerCase() as BATTLESHIPShipName;
+    if (!BATTLESHIP_SHIP_NAMES.includes(name)) {
+      return `"${String(entry?.ship)}" is not one of your ships (${BATTLESHIP_SHIP_NAMES.join(', ')}).`;
+    }
+    const start = parseBattleshipCell(entry?.start);
+    if (!start) return `The ${name}'s start "${String(entry?.start)}" is not a cell like B7.`;
+    const dir = String(entry?.direction ?? '').trim().toLowerCase();
+    if (dir !== 'right' && dir !== 'down') return `The ${name}'s direction must be "right" or "down".`;
+    out.push({ name, row: start.row, col: start.col, horizontal: dir === 'right' });
+  }
+  return out;
+}
+
+function describePlacement(p: BATTLESHIPPlacement): string {
+  const cells = placementCells(p);
+  const last = cells[cells.length - 1];
+  return `${battleshipCellName(p.row, p.col)} to ${battleshipCellName(last.row, last.col)}`;
+}
+
+async function dispatchChat(s: Session): Promise<void> {
+  const entries = s.chatBuffer.splice(0);
+  if (entries.length === 0) return;
+  const voiceCall = entries.some((e) => e.voiceCall) || isCallActive(s.characterId);
+  let replies: ChatMessage[] = [];
+  const seq = s.turnSeq;
+  try {
+    const r = await runBoardTurn({
+      surface: 'battleship',
+      characterId: s.characterId,
+      kind: 'chat-reply',
+      contract: await contractBlock(s),
+      turnBlock: turnBlock(s, 'chat-reply', null),
+      gameLog: s.gameLog,
+      clock: s.clock,
+      tools: BATTLESHIP_TOOLS,
+      voiceCall,
+      maxHops: 2,
+      maxTokens: SHOT_MAX_TOKENS,
+      isStale: () => s.turnSeq !== seq || sessions.get(s.characterId) !== s,
+      onTool: async (tu) => ({
+        note:
+          tu.name === 'fire' || tu.name === 'place_fleet'
+            ? `${tu.name}() does nothing on a chat reply; your turn is asked for on its own. Reply in text, or say nothing.`
+            : `The tool "${tu.name}" does nothing on this turn. Reply in text, or say nothing.`,
+        isError: true,
+      }),
+      registerAbort: (ctrl, done) => registerAbort(s, ctrl, done),
+      pushChatMessage: requireDeps().pushChatMessage,
+      provider: providerOverride,
+    });
+    replies = r.spoken;
+    if (replies.length) {
+      s.spoke = true;
+      s.stats.chatReplies++;
+    }
+  } catch (err) {
+    if ((err as Error)?.message !== CHAT_ABORTED) {
+      if ((await raiseUsageLimitPopup(err, 'battleship')) === 'depleted') s.creditQuiet = true;
+      console.warn(`[sei/battleship] chat reply failed: ${describeErr(err)}`);
+      void (async () => {
+        try {
+          const { surfaceErrorClass } = await loadAnalytics();
+          captureError(s.characterId, `chat_turn_${surfaceErrorClass(err)}`);
+        } catch { /* analytics is never load-bearing */ }
+      })();
+    }
+  }
+  for (const e of entries) e.resolve({ replies, streamed: true });
+}
+
+function registerAbort(s: Session, ctrl: AbortController, done: boolean): void {
+  if (!done) s.turnCtrl = ctrl;
+  else if (s.turnCtrl === ctrl) s.turnCtrl = null;
+}
+
+function flushChatBuffer(s: Session): void {
+  for (const e of s.chatBuffer.splice(0)) e.resolve({ replies: [], streamed: true });
+}
+
+function noteFirstMove(s: Session, by: 'player' | 'ai'): void {
+  if (s.firstMoveSent) return;
+  s.firstMoveSent = true;
+  capture('battleship_first_move', {
+    character_id: s.characterId,
+    by,
+    ms_since_start: Date.now() - s.startedAt,
+  });
+}
+
 // ── analytics + continuity OUT ───────────────────────────────────────────────
 
 function endSession(
   s: Session,
   result: BATTLESHIPResult,
-  opts?: { silent?: boolean },
+  // `reason` overrides the analytics reason only ('account_switch', 'app_quit').
+  opts?: { silent?: boolean; reason?: string },
 ): void {
+  if (s.status === 'ended') return;
+  const phase = s.status;
   s.turnSeq++;
   try { s.turnCtrl?.abort(); } catch { /* already done */ }
   s.turnCtrl = null;
   s.aiThinking = false;
-  s.pendingAiMove = null;
   s.status = 'ended';
   s.result = result;
+  s.queue?.dispose();
+  s.queue = null;
+  flushChatBuffer(s);
   push(s);
 
   const durationMs = Date.now() - s.startedAt;
-  void (async () => {
-    try {
-      const { capture } = await loadAnalytics();
-      capture('battleship_game_ended', {
-        character_id: s.characterId,
-        duration_ms: durationMs,
-        shots: s.shotsFired,
-        reason: result.reason,
-        outcome: result.winner === null ? 'draw' : result.winner === 'player' ? 'player' : 'ai',
-      });
-    } catch { /* analytics is never load-bearing */ }
-  })();
+  capture('battleship_game_ended', {
+    character_id: s.characterId,
+    duration_ms: durationMs,
+    shots: s.playerShots + s.aiShots,
+    player_moves: s.playerShots,
+    llm_moves: s.stats.llmMoves,
+    // Always 0, kept so a dashboard can assert it: the engine never moves.
+    engine_moves: 0,
+    retries: s.stats.retries,
+    illegal_moves: s.stats.illegal,
+    failed_turns: s.stats.failedTurns,
+    retry_clicks: s.stats.retryClicks,
+    chat_replies: s.stats.chatReplies,
+    spoke: s.spoke,
+    ended_in: phase,
+    reason: opts?.reason ?? result.reason,
+    outcome: result.reason === 'abandoned' ? 'abandoned' : result.winner ?? 'draw',
+  });
 
-  // Continuity OUT: transcript play row, then foldIfDue.
   if (result.reason !== 'abandoned' || s.history.length > 0 || s.spoke) {
     void trackScopedWrite((async () => {
       let name = 'your companion';
+      let personaExpanded: string | undefined;
+      let zh = false;
       try {
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
+        personaExpanded = c?.persona?.expanded;
+        if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') zh = true;
       } catch { /* generic name */ }
       const ev: ChatMessage = {
         id: randomUUID(),
         role: 'system',
-        text: BATTLESHIPSummaryText(name, result, s.shotsFired, durationMs),
+        text: playSummaryText(name, zh ? BATTLESHIP_GAME_NAME_ZH : BATTLESHIP_GAME_NAME, durationMs, zh ? 'zh' : undefined),
         ts: Date.now(),
-        event: { kind: 'play', game: 'Battleship', durationMs },
+        event: { kind: 'play', game: BATTLESHIP_GAME_NAME, durationMs },
       };
       try {
-        const { appendMessage } = await import('../chat/chatStore');
-        await appendMessage(s.characterId, ev);
+        await chatStore.appendMessage(s.characterId, ev);
         requireDeps().pushChatMessage(s.characterId, ev);
       } catch { /* best-effort */ }
-      if (!opts?.silent) void foldIfDue(s.characterId, 'app').catch(() => {});
+      if (!s.creditQuiet) void foldIfDue(s.characterId, personaExpanded).catch(() => {});
     })());
   }
-}
 
-function BATTLESHIPSummaryText(
-  name: string,
-  result: BATTLESHIPResult,
-  shotCount: number,
-  durationMs: number,
-): string {
-  if (result.reason === 'abandoned') {
-    return `You and ${name} left a Battleship game unfinished.`;
+  if (!opts?.silent && !s.creditQuiet && result.reason !== 'abandoned') {
+    void runGameOverTurn(s).catch(() => {});
   }
-  if (result.winner === null) {
-    return `You and ${name} drew a Battleship game after ${shotCount} shots.`;
-  }
-  const won = result.winner === 'player';
-  return won
-    ? `You beat ${name} at Battleship in ${shotCount} shots.`
-    : `${name} beat you at Battleship in ${shotCount} shots.`;
 }
 
-// ── internals ────────────────────────────────────────────────────────────────
-
-function requireActive(id: string): Session {
-  const s = sessions.get(id);
-  if (!s || s.status !== 'active') throw new Error('no active Battleship game');
-  return s;
+async function runGameOverTurn(s: Session): Promise<void> {
+  const r = await runBoardTurn({
+    surface: 'battleship',
+    characterId: s.characterId,
+    kind: 'game-over',
+    contract: await contractBlock(s),
+    turnBlock: s.result ? gameOverBlock(s, s.result, await playerNameOf()) : turnBlock(s, 'game-over', null),
+    gameLog: s.gameLog,
+    clock: s.clock,
+    tools: BATTLESHIP_TOOLS,
+    voiceCall: isCallActive(s.characterId),
+    maxHops: 2,
+    maxTokens: SHOT_MAX_TOKENS,
+    isStale: () => sessions.get(s.characterId) !== s,
+    onTool: async (tu) => ({ note: `The game is over; "${tu.name}" does nothing now. Say your line, or nothing.`, isError: true }),
+    registerAbort: () => {},
+    pushChatMessage: requireDeps().pushChatMessage,
+    provider: providerOverride,
+  });
+  if (r.spoken.length) s.spoke = true;
 }
+
+// ── rules ────────────────────────────────────────────────────────────────────
 
 function shipAt(grid: BATTLESHIPGrid, row: number, col: number): BATTLESHIPShip | null {
   for (const ship of grid.ships) {
@@ -425,493 +896,241 @@ function shipAt(grid: BATTLESHIPGrid, row: number, col: number): BATTLESHIPShip 
   return null;
 }
 
-function allShipsSunk(grid: BATTLESHIPGrid): boolean {
+export function allShipsSunk(grid: BATTLESHIPGrid): boolean {
   return grid.ships.length > 0 && grid.ships.every((ship) => ship.sunk);
 }
 
-function applyPlayerShot(s: Session, row: number, col: number): void {
-  s.shotsFired++;
-  const ship = shipAt(s.aiGrid, row, col);
-  if (ship) {
-    s.aiGrid.cells[row][col] = 'hit';
-    s.aiVisibleGrid.cells[row][col] = 'hit';
-    const hitCells = ship.cells.filter((cell) =>
-      s.aiGrid.cells[cell.row][cell.col] === 'hit',
-    );
-    if (hitCells.length === ship.cells.length) {
-      ship.sunk = true;
-      for (const cell of ship.cells) {
-        s.aiGrid.cells[cell.row][cell.col] = 'sunk';
-        s.aiVisibleGrid.cells[cell.row][cell.col] = 'sunk';
-      }
-      s.history.push({ row, col, hit: true, sunkShip: ship.name });
-    } else {
-      s.history.push({ row, col, hit: true, sunkShip: null });
-    }
-  } else {
-    s.aiGrid.cells[row][col] = 'miss';
-    s.aiVisibleGrid.cells[row][col] = 'miss';
-    s.history.push({ row, col, hit: false, sunkShip: null });
-  }
-}
-
-function applyAiShot(s: Session, row: number, col: number): void {
-  const ship = shipAt(s.playerGrid, row, col);
-  if (ship) {
-    s.playerGrid.cells[row][col] = 'hit';
-    const hitCells = ship.cells.filter((cell) =>
-      s.playerGrid.cells[cell.row][cell.col] === 'hit',
-    );
-    if (hitCells.length === ship.cells.length) {
-      ship.sunk = true;
-      for (const cell of ship.cells) {
-        s.playerGrid.cells[cell.row][cell.col] = 'sunk';
-      }
-      s.history.push({ row, col, hit: true, sunkShip: ship.name });
-    } else {
-      s.history.push({ row, col, hit: true, sunkShip: null });
-    }
-  } else {
-    s.playerGrid.cells[row][col] = 'miss';
-    s.history.push({ row, col, hit: false, sunkShip: null });
-  }
-}
-
-function checkGameOver(s: Session): boolean {
-  const aiSunk = allShipsSunk(s.aiGrid);
-  const playerSunk = allShipsSunk(s.playerGrid);
-  if (aiSunk && playerSunk) {
-    endSession(s, { winner: null, reason: 'all-ships-sunk' });
-    return true;
-  }
-  if (aiSunk) {
-    endSession(s, { winner: 'player', reason: 'all-ships-sunk' });
-    return true;
-  }
-  if (playerSunk) {
-    endSession(s, { winner: 'ai', reason: 'all-ships-sunk' });
-    return true;
-  }
-  return false;
-}
-
-function nextTurn(s: Session): 'player' | 'ai' {
-  return s.turn === 'player' ? 'ai' : 'player';
-}
-
-// ── AI move (LLM picks row, col) ─────────────────────────────────────────────
-
 /**
- * A cell the AI has not fired at yet. The AI's shot record IS the player's grid
- * ('hit' / 'miss' / 'sunk' were written by applyAiShot); 'ship' still reads as
- * an unfired cell because the player's fleet is hidden from the AI.
- *
- * aiVisibleGrid is the PLAYER's view of the AI's own board and must never be
- * used here: doing so made every AI turn accept a cell it had already bombed,
- * so the board never changed and the companion looked like it was not playing.
+ * Fire at (row, col) on the target's board. The caller checked the cell was
+ * not fired at before. Records the shot for both the board and the log.
  */
-function aiCanFireAt(s: Session, row: number, col: number): boolean {
-  const cell = s.playerGrid.cells[row][col];
-  return cell === 'empty' || cell === 'ship';
+function applyShot(s: Session, by: 'player' | 'ai', row: number, col: number): BATTLESHIPShotRecord {
+  const target = by === 'player' ? s.aiGrid : s.playerGrid;
+  const view = by === 'player' ? s.aiVisibleGrid : null;
+  if (by === 'player') s.playerShots++;
+  else s.aiShots++;
+  const ship = shipAt(target, row, col);
+  let rec: BATTLESHIPShotRecord;
+  if (ship) {
+    target.cells[row][col] = 'hit';
+    if (view) view.cells[row][col] = 'hit';
+    if (ship.cells.every((c) => target.cells[c.row][c.col] === 'hit')) {
+      ship.sunk = true;
+      for (const c of ship.cells) {
+        target.cells[c.row][c.col] = 'sunk';
+        if (view) view.cells[c.row][c.col] = 'sunk';
+      }
+      rec = { by, row, col, hit: true, sunkShip: ship.name };
+    } else {
+      rec = { by, row, col, hit: true, sunkShip: null };
+    }
+  } else {
+    target.cells[row][col] = 'miss';
+    if (view) view.cells[row][col] = 'miss';
+    rec = { by, row, col, hit: false, sunkShip: null };
+  }
+  s.history.push(rec);
+  s.lastActivityAt = Date.now();
+  const name = battleshipCellName(row, col);
+  const what = rec.sunkShip ? `hit and sank ${by === 'ai' ? 'their' : 'your'} ${rec.sunkShip}` : rec.hit ? 'hit' : 'miss';
+  s.gameLog.push({
+    ts: Date.now(),
+    text: by === 'ai' ? `(game) You fired at ${name}: ${what}.` : `(game) They fired at ${name}: ${what}.`,
+  });
+  return rec;
 }
 
-function aiLegalCells(s: Session): Array<{ row: number; col: number }> {
-  const out: Array<{ row: number; col: number }> = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (aiCanFireAt(s, r, c)) out.push({ row: r, col: c });
-    }
-  }
-  return out;
-}
+// ── prompts ──────────────────────────────────────────────────────────────────
 
 const FIRE_TOOL = {
   name: 'fire',
   description:
-    'Fire a shot at a cell on the player\'s 10x10 grid. Give row (0-9) and col (0-9). ' +
-    'Only legal cells (not already fired at) may be targeted.',
+    'Fire one shot at their board on your turn. Name the cell as the board labels it: row letter A to J, ' +
+    'then column 1 to 10, like "B7". A cell you already fired at is not allowed.',
   input_schema: {
     type: 'object' as const,
     properties: {
-      row: { type: 'number', description: 'Row 0-9 (top to bottom).' },
-      col: { type: 'number', description: 'Column 0-9 (left to right).' },
+      cell: { type: 'string', description: 'The cell, like "B7" (row A-J, column 1-10).' },
+      say: SAY_PROPERTY,
     },
-    required: ['row', 'col'],
+    required: ['cell'],
   },
 };
 
-const CONNECT4_MAX_HOPS = 5;
-/** Hard wall-clock budget for one AI turn (the deadline race, not just an abort). */
-const TURN_TIMEOUT_MS = 20_000;
-/** Whole-turn ceiling: setup + provider call. Must exceed TURN_TIMEOUT_MS. */
-const TURN_HARD_DEADLINE_MS = 28_000;
-
-function enqueueAiMove(s: Session): void {
-  if (s.status !== 'active' || s.turn !== 'ai') return;
-  if (s.aiThinking) {
-    // A turn that never settled must not block the next one forever: past its
-    // own budget the flag is stale and this enqueue takes the turn over.
-    const age = Date.now() - (s.aiTurnStartedAt ?? 0);
-    if (age < TURN_HARD_DEADLINE_MS + 10_000) return;
-    try { s.turnCtrl?.abort(); } catch { /* already done */ }
-  }
-  s.aiThinking = true;
-  s.aiTurnStartedAt = Date.now();
-  push(s);
-  void runAiTurn(s);
-}
-
-/** Re-arm a wedged AI turn so a player click can never land on a dead board. */
-function rearmIfWedged(s: Session): void {
-  if (s.status !== 'active' || s.turn !== 'ai') return;
-  if (s.aiThinking && Date.now() - (s.aiTurnStartedAt ?? 0) < TURN_HARD_DEADLINE_MS + 10_000) return;
-  s.aiThinking = false;
-  enqueueAiMove(s);
-}
-
-async function runAiTurn(s: Session): Promise<void> {
-  // Setup (character read, config, chat history) can throw before the turn
-  // guard is armed; catch it here so the board never freezes on the AI.
-  const seq = s.turnSeq;
-  // 261126: the whole turn is bounded, not just the provider call. A hung
-  // history read sat before the LLM deadline and pinned aiThinking forever,
-  // which made every later player move a silent no-op.
-  let hardTimer: ReturnType<typeof setTimeout> | null = null;
-  const hardDeadline = new Promise<never>((_, reject) => {
-    hardTimer = setTimeout(() => {
-      const e = new Error(`Battleship turn exceeded ${TURN_HARD_DEADLINE_MS}ms`);
-      e.name = 'TimeoutError';
-      reject(e);
-    }, TURN_HARD_DEADLINE_MS);
-  });
-  try {
-    await Promise.race([runAiTurnUnsafe(s), hardDeadline]);
-  } catch (err) {
-    if (s.turnSeq !== seq) return;
-    console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
-    s.aiThinking = false;
-    aiFallbackShot(s);
-  } finally {
-    if (hardTimer) clearTimeout(hardTimer);
-  }
-  // Safety net: if the AI turn finished without firing and it's still the AI's
-  // turn, fall back to a shot so the board never stalls on a yapping model.
-  if (s.status === 'active' && s.turn === 'ai') {
-    s.aiThinking = false;
-    aiFallbackShot(s);
-  }
-}
-
-async function runAiTurnUnsafe(s: Session): Promise<void> {
-  const d = requireDeps();
-  const character = await getCharacter(s.characterId);
-  if (!character) {
-    s.aiThinking = false;
-    aiFallbackShot(s);
-    return;
-  }
-  const config = await loadConfig();
-  const playerName = (config.preferred_name ?? '').trim() || 'the player';
-  const [{ history }] = await Promise.all([
-    (async () => {
-      const { readChatContext } = await import('../chat/continuity');
-      return await readChatContext(s.characterId);
-    })(),
-  ]);
-
-  // 261124: the games were the one surface with no language rule, so the
-  // companion answered in whatever the transcript happened to be in.
-  const lang = companionLanguageFor(character, config);
-  const system = [
-    `# Battleship (BATTLESHIP)`,
-    `You are playing Battleship against ${playerName} inside the Sei app.`,
-    `You are the AI; ${playerName} is the player.`,
-    `You each have a hidden 10x10 grid with 5 ships: carrier (5), battleship (4), cruiser (3), submarine (3), destroyer (2).`,
-    'You MUST call fire() exactly once every turn. Never write any text — text is not spoken and wastes your turn.',
-    'The board shows your shot by itself. Do not describe coordinates, do not narrate, do not comment.',
-    'Just call fire() with one legal cell. That is your entire turn.',
-    '',
-    'NEVER SAY COORDINATES OUT LOUD. Point at cells in words instead ("top left", "center", "bottom right").',
-    '',
-    // 261124: the games were the one surface with no language rule, so the
-    // companion answered in whatever the transcript happened to be in.
-    renderLanguageDirective(lang.language),
-    lang.adopted ? renderAdoptedLanguageNote(lang.language) : '',
-  ].join('\n');
-
-  // The AI's own view of the board it is shooting at: only its own hits and
-  // misses are known, and the player's fleet reads as '.' exactly like a real
-  // hidden grid.
-  const boardText = s.playerGrid.cells
-    .map((row) =>
-      row.map((cell) => {
-        if (cell === 'hit') return 'X';
-        if (cell === 'miss') return 'o';
-        if (cell === 'sunk') return '#';
-        return '.';
-      }).join(' '),
-    )
-    .join('\n');
-
-  const legalCells = aiLegalCells(s);
-
-  const messages: LlmMessage[] = [
-    // Transcript rows carry roles the API does not know ('companion', plus
-    // 'system' rows for play and call events), and a malformed role made the
-    // whole game turn fail upstream. toMessages is the canonical mapper.
-    ...toMessages(history ?? []),
-    {
-      role: 'user',
-      content:
-        `It is YOUR shot. Your view of the AI board (rows top to bottom, . = unknown, X = hit, o = miss, # = sunk):\n${boardText}\n\n` +
-        `Legal cells: ${legalCells.map((cell) => `(${cell.row},${cell.col})`).join(', ')}. Call fire() with one of them.`,
+const PLACE_FLEET_TOOL = {
+  name: 'place_fleet',
+  description:
+    'Place all five of your ships on your own board before the battle, in one call. Each ship starts at a cell ' +
+    'and runs "right" (along the row) or "down" (along the column). Ships must stay on the board and must not overlap. ' +
+    'Sizes: carrier 5, battleship 4, cruiser 3, submarine 3, destroyer 2.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      ships: {
+        type: 'array',
+        minItems: 5,
+        maxItems: 5,
+        items: {
+          type: 'object',
+          properties: {
+            ship: { type: 'string', enum: [...BATTLESHIP_SHIP_NAMES] },
+            start: { type: 'string', description: 'Its first cell, like "C2" (the top or left end).' },
+            direction: { type: 'string', enum: ['right', 'down'] },
+          },
+          required: ['ship', 'start', 'direction'],
+        },
+      },
+      say: SAY_PROPERTY,
     },
-  ];
+    required: ['ships'],
+  },
+};
 
-  const ctrl = new AbortController();
-  s.turnCtrl = ctrl;
-  const seq = s.turnSeq;
-  const stale = () => s.turnSeq !== seq || ctrl.signal.aborted;
-  /**
-   * 261126: the board stalled on a turn whose provider call never settled (a
-   * proxy 502 that keeps retrying, a fetch that ignores the abort signal). The
-   * abort alone is not a deadline: the turn only ends when the call REJECTS, so
-   * a hung call left aiThinking true forever and the board stuck mid-turn.
-   * Race the call against a wall-clock deadline so the fallback shot always
-   * happens.
-   */
-  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
-  const deadline = new Promise<never>((_, reject) => {
-    deadlineTimer = setTimeout(() => {
-      try { ctrl.abort(); } catch { /* already done */ }
-      const e = new Error(`Battleship turn timed out after ${TURN_TIMEOUT_MS}ms`);
-      e.name = 'TimeoutError';
-      reject(e);
-    }, TURN_TIMEOUT_MS);
+/** One fixed array for every turn kind (tools lead the cache prefix). */
+const BATTLESHIP_TOOLS = [FIRE_TOOL, PLACE_FLEET_TOOL, REMEMBER_TOOL];
+
+async function playerNameOf(): Promise<string> {
+  const config = await loadConfig();
+  return (config.preferred_name ?? '').trim() || 'the player';
+}
+
+async function contractBlock(_s: Session): Promise<string> {
+  const playerName = await playerNameOf();
+  return [
+    '# FLEET BATTLE',
+    `You are playing a casual game of Fleet Battle against ${playerName} inside the Sei app.`,
+    'The rules: each side has a 10x10 board, rows A to J from the top and columns 1 to 10 from the left, with five ' +
+      'hidden ships: carrier (5 cells), battleship (4), cruiser (3), submarine (3) and destroyer (2). First each side ' +
+      'places its own ships. Then you take turns firing one shot at a cell on the other board; the shot is a hit or a ' +
+      'miss, and a ship sinks once all its cells are hit. Sink all five of theirs before they sink yours to win.',
+    'You make your own choices and you play to win. Before the battle, place your own fleet with place_fleet(). ' +
+      'On your turn, call fire() with one cell you have not fired at. When you hit a ship, its other cells are next ' +
+      'to that hit along a straight line, so follow it up until it sinks. That is how your turn happens; describing it does nothing.',
+    'On your turn (a shot, or placing your fleet), plain text is private: it is your own space to work out the ' +
+      'board, nobody sees it, and it does not need to be tidy. Keep it short. Anything you want to say out loud goes ' +
+      'in the say field of fire() or place_fleet().',
+    'Table talk: talk like yourself. Groan, gloat, needle them. One short line, the length of a text message. ' +
+      'Talk when something happens: you hit or sink a ship, they hit or sink one of yours, the end is close. ' +
+      'A quiet shot is the normal case, so leave say out unless you have something to say. The board shows ' +
+      'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
+      'talk through your analysis. Do not open with "ok", "okay" or "alright", and do not repeat a line you already ' +
+      'said this game.',
+    'When they talk to you, or when the game is over, there is no move to make and your plain text is said out ' +
+      'loud, exactly as written. One short line, or nothing.',
+    `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
+      'The app tells you whose turn it is.',
+    'Save something with remember() only if it is about them as a person, not the game itself.',
+  ].join('\n\n');
+}
+
+/** A board as text: "." unknown/empty, "o" miss, "X" hit, "#" sunk, "S" own ship. */
+function gridText(grid: BATTLESHIPGrid, showShips: boolean): string {
+  const header = `   ${Array.from({ length: COLS }, (_, i) => String(i + 1).padStart(2, ' ')).join('')}`;
+  const lines = grid.cells.map((row, r) => {
+    const cells = row
+      .map((c) => {
+        if (c === 'miss') return ' o';
+        if (c === 'hit') return ' X';
+        if (c === 'sunk') return ' #';
+        if (c === 'ship') return showShips ? ' S' : ' .';
+        return ' .';
+      })
+      .join('');
+    return `${String.fromCharCode(65 + r)}  ${cells}`;
   });
+  return [header, ...lines].join('\n');
+}
 
-  let fired = false;
+function shipsLine(grid: BATTLESHIPGrid): string {
+  const afloat = grid.ships.filter((sh) => !sh.sunk).map((sh) => `${sh.name} (${sh.size})`);
+  const sunk = grid.ships.filter((sh) => sh.sunk).map((sh) => sh.name);
+  return `afloat: ${afloat.join(', ') || 'none'}; sunk: ${sunk.join(', ') || 'none'}`;
+}
 
-  try {
-    const llm = await buildLlmProvider();
-    for (let hop = 0; hop < CONNECT4_MAX_HOPS && !stale(); hop++) {
-      const res = await Promise.race([
-        llm.call({
-          maxTokens: 600,
-          system,
-          tools: [FIRE_TOOL, REMEMBER_TOOL],
-          messages,
-          timeoutMs: TURN_TIMEOUT_MS,
-          signal: ctrl.signal,
-        }),
-        deadline,
-      ]);
-
-      const toolUses = res.content.filter((b) => b.type === 'tool_use');
-      // 261126: the AI turn used to be a black box. Log what the model actually
-      // said so a dead board can be debugged from the terminal (Ouen's ask).
-      logAiOutput(hop, res.content);
-      // Battleship AI never speaks — the board shows the shot by itself.
-      // Fire only, no commentary, no yapping.
-      if (!toolUses.length) break;
-
-      messages.push({ role: 'assistant', content: res.content as unknown as string });
-      const results: Array<string> = [];
-      for (const tu of toolUses) {
-        let note: string;
-        if (tu.name === 'fire') {
-          const input = tu.input as { row?: number; col?: number } | undefined;
-          const rawRow = input?.row;
-          const rawCol = input?.col;
-          if (
-            typeof rawRow !== 'number' || typeof rawCol !== 'number' ||
-            !Number.isFinite(rawRow) || !Number.isFinite(rawCol) ||
-            !Number.isInteger(rawRow) || !Number.isInteger(rawCol) ||
-            rawRow < 0 || rawRow >= ROWS || rawCol < 0 || rawCol >= COLS ||
-            !aiCanFireAt(s, rawRow, rawCol)
-          ) {
-            note = `(${rawRow},${rawCol}) is not a legal cell here. Legal cells: ${legalCells.map((cell) => `(${cell.row},${cell.col})`).join(', ')}. Call fire() again.`;
-          } else if (fired) {
-            note = 'You already fired your shot this turn.';
-          } else {
-            fired = true;
-            applyAiShot(s, rawRow, rawCol);
-            const state = push(s);
-            s.shotsFired++;
-            if (checkGameOver(s)) {
-              // game over already ended the session
-            } else {
-              s.turn = 'player';
-              s.aiThinking = false;
-              push(s);
-            }
-            note = `You fire at (${rawRow},${rawCol}). The result shows on the board; do not call fire() again this turn.`;
-          }
-        } else if (tu.name === 'remember') {
-          const memText = String((tu.input as { text?: string })?.text ?? '').trim();
-          if (memText) {
-            try {
-              const written = await appendMemory(
-                path.join(paths.memoryDir(s.characterId), 'MEMORY.md'),
-                memText,
-                undefined,
-                { section: 'app' },
-              );
-              note =
-                written === 0
-                  ? 'You already saved that a moment ago; nothing new was written. Continue.'
-                  : 'Saved. Continue; do not mention saving it.';
-            } catch {
-              note = 'Could not save it. Continue.';
-            }
-          } else {
-            note = 'Nothing saved; the text was empty.';
-          }
-        } else {
-          note = `The tool "${tu.name}" does nothing on this turn and never will. Do not call it again.`;
-        }
-        results.push(note);
-      }
-      messages.push({ role: 'user', content: results.join('\n') });
-
-      if (fired) break;
+function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): string {
+  const lines: string[] = [];
+  if (s.status === 'preparing') {
+    if (s.aiFleet === 'ready') {
+      lines.push('Your fleet is placed. They are still placing theirs; the battle starts when they are done.');
+      lines.push(`Your board:\n${gridText(s.aiGrid, true)}`);
+    } else {
+      lines.push('The battle has not started. Each side is placing its ships.');
     }
-
-    if (stale()) {
-      const e = new Error('aborted');
-      e.name = 'AbortError';
-      throw e;
+  } else {
+    lines.push(
+      `Their board, where you shoot ("." not fired at, "o" your miss, "X" your hit, "#" a ship you sank). ` +
+        `Shots you fired: ${s.aiShots}.`,
+    );
+    lines.push(gridText(s.playerGrid, false));
+    const theirShips = s.playerGrid.ships.filter((sh) => sh.sunk).map((sh) => sh.name);
+    lines.push(`Their ships you sank: ${theirShips.join(', ') || 'none yet'}.`);
+    lines.push(`Your own board ("S" your ship, "o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`);
+    lines.push(gridText(s.aiGrid, true));
+    const lastTheirs = [...s.history].reverse().find((h) => h.by === 'player');
+    if (lastTheirs) {
+      const what = lastTheirs.sunkShip ? `hit and sank your ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit' : 'miss';
+      lines.push(`Their last shot: ${battleshipCellName(lastTheirs.row, lastTheirs.col)}, ${what}.`);
     }
-
-    if (!fired && s.status === 'active') {
-      aiFallbackShot(s);
-    }
-  } catch (err) {
-    if (s.turnSeq !== seq) return;
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      console.error(`[sei/battleship] AI turn timed out, firing a fallback shot`);
-    } else if (!ctrl.signal.aborted) {
-      console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
-    }
-    // The companion never blocks the board: on a failed or timed-out turn it
-    // fires at a free cell and hands the turn back to the player.
-    s.aiThinking = false;
-    aiFallbackShot(s);
-  } finally {
-    if (deadlineTimer) clearTimeout(deadlineTimer);
-    if (s.turnCtrl === ctrl) s.turnCtrl = null;
-    s.aiThinking = false;
   }
+
+  if (kind === 'place') {
+    lines.push(
+      'Place your fleet now: call place_fleet() with all five ships, each with its start cell and "right" or "down". ' +
+        'Choose the spots yourself; they stay hidden from them.',
+    );
+    if (retryNote) lines.push(retryNote);
+  } else if (kind === 'move') {
+    lines.push('It is YOUR shot.');
+    if (retryNote) lines.push(retryNote);
+    if (s.recentLines.length) {
+      lines.push(`Your recent lines: ${s.recentLines.map((l) => `"${l}"`).join(' / ')}. Do not say these again or anything close to them.`);
+    }
+    if (s.talkedLastMove) {
+      lines.push('You said something with your last shot, so this one can go by without a word unless their shot really calls for one.');
+    }
+    lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at, and say only if you have something to say.');
+  } else if (kind === 'chat-reply') {
+    lines.push(
+      aiTurnKind(s)
+        ? 'They just said something. Your own turn comes on its own right after this reply. Answer them in text, or say nothing.'
+        : 'They just said something. Answer them in text, or say nothing.',
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
- * Fire for the companion when the LLM turn produced nothing (error, timeout,
- * no tool call). Never re-enqueues: a failing model must not spin in a retry
- * loop while the player stares at a dead board.
+ * The game-over turn: the result first and in so many words, no boards,
+ * with the player named. With the result under both boards, Haiku 5.5 got it
+ * backwards in 2 of 3 games; with a bare "YOU WON" it still told the player
+ * "you won" in 3 of 5 scripted wins, so the line names who won and says which
+ * side of the table the character is talking from.
  */
-function chooseFallbackShot(
-  s: Session,
-  legal: ReadonlyArray<{ row: number; col: number }>,
-): { row: number; col: number } | null {
-  if (!legal.length) return null;
-  const free = new Set(legal.map((cell) => cell.row * COLS + cell.col));
-  const isFree = (row: number, col: number): boolean =>
-    row >= 0 && row < ROWS && col >= 0 && col < COLS && free.has(row * COLS + col);
-  const pick = (
-    cells: ReadonlyArray<{ row: number; col: number }>,
-  ): { row: number; col: number } =>
-    cells[Math.floor(Math.random() * cells.length)] ?? legal[0];
-
-  // Hunt/target: a cell NEXT TO one of our hits first, so a wounded ship gets
-  // finished instead of the board being sprayed at random.
-  const wounded: Array<{ row: number; col: number }> = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = s.playerGrid.cells[r][c];
-      if (cell !== 'hit') continue;
-      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-        if (isFree(r + dr, c + dc)) wounded.push({ row: r + dr, col: c + dc });
-      }
-    }
-  }
-  if (wounded.length) return pick(wounded);
-
-  // Nothing wounded: sweep one parity of the board (a 10x10 grid holds every
-  // ship of length 2+ on both parities, and a checkerboard halves the misses).
-  const parity = legal.filter((cell) => (cell.row + cell.col) % 2 === 0);
-  return pick(parity.length ? parity : legal);
-}
-
-function aiFallbackShot(s: Session): void {
-  if (s.status !== 'active' || s.turn !== 'ai') return;
-  const target = chooseFallbackShot(s, aiLegalCells(s));
-  if (!target) {
-    s.aiThinking = false;
-    push(s);
-    return;
-  }
-  applyAiShot(s, target.row, target.col);
-  s.shotsFired++;
-  s.aiThinking = false;
-  push(s);
-  if (!checkGameOver(s)) {
-    s.turn = 'player';
-    push(s);
-  }
-}
-
-async function speak(
-  s: Session,
-  text: string,
-  spoken: ChatMessage[],
-): Promise<void> {
-  const d = requireDeps();
-  const parts = text.split(/\n+/).filter(Boolean);
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const msg: ChatMessage = {
-      id: randomUUID(),
-      role: 'companion',
-      text: trimmed,
-      ts: Date.now(),
-      ...(isCallActive(s.characterId) ? { voice: true } : {}),
-    };
-    spoken.push(msg);
-    try {
-      const { appendMessage } = await import('../chat/chatStore');
-      await appendMessage(s.characterId, msg);
-      d.pushChatMessage(s.characterId, msg);
-      s.lastActivityAt = Date.now();
-      s.spoke = true;
-    } catch { /* best-effort */ }
-  }
-}
-
-/** One line per LLM hop: what the model chose and what (if anything) it said. */
-function logAiOutput(
-  hop: number,
-  content: ReadonlyArray<{ type: string; text?: string; name?: string; input?: unknown }>,
-): void {
-  const text = content
-    .filter((b) => b.type === 'text' && b.text)
-    .map((b) => b.text!.trim())
-    .join(' ')
-    .slice(0, 160);
-  const tools = content
-    .filter((b) => b.type === 'tool_use')
-    .map((b) => `${b.name}(${JSON.stringify(b.input ?? {})})`)
-    .join(' ');
-  console.log(
-    `[sei/battleship] ai hop=${hop} tools=${tools || 'none'} text=${text ? JSON.stringify(text) : 'none'}`,
-  );
+function gameOverBlock(s: Session, r: BATTLESHIPResult, player: string): string {
+  const theirsSunk = s.playerGrid.ships.filter((sh) => sh.sunk).length;
+  const mineAfloat = s.aiGrid.ships.filter((sh) => !sh.sunk).length;
+  const Player = player.charAt(0).toUpperCase() + player.slice(1);
+  const result =
+    r.reason === 'all-ships-sunk'
+      ? r.winner === 'ai'
+        ? `You won and ${player} lost. You sank all five of ${player}'s ships while ${mineAfloat} of yours were ` +
+          `still afloat. You are the winner, talking to the person you just beat.`
+        : `${Player} won and you lost. ${Player} sank all five of your ships; you had sunk ${theirsSunk} of theirs. ` +
+          `You are the one who lost, talking to the person who beat you.`
+      : r.reason === 'resign'
+        ? `You won: ${player} gave up. You are the winner, talking to the person who gave up.`
+        : 'The game ended without a winner.';
+  return [
+    `The game is over. ${result} That is settled; the app checked it.`,
+    'There is nothing to call now. Write only the line you say to them, in your own voice, or nothing.',
+  ].join('\n');
 }
 
 function describeErr(err: unknown): string {
   const e = err as Error & { status?: number; cause?: Error };
-  let out = `${e.name ?? 'Error'}: ${e.message}`;
-  if (e.status !== undefined) out += ` status=${e.status}`;
-  for (let c = e.cause; c; c = c.cause as Error | undefined) {
+  let out = `${e?.name ?? 'Error'}: ${e?.message}`;
+  if (e?.status !== undefined) out += ` status=${e.status}`;
+  for (let c = e?.cause; c; c = c.cause as Error | undefined) {
     out += ` <- ${c.name ?? 'Error'}: ${c.message}`;
   }
   return out;
@@ -922,18 +1141,31 @@ function describeErr(err: unknown): string {
 export function endAllBATTLESHIP(reason: string): void {
   for (const s of [...sessions.values()]) {
     if (s.status !== 'ended') {
-      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
+      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason });
     }
     sessions.delete(s.characterId);
   }
 }
 
 export async function shutdownBATTLESHIP(): Promise<void> {
+  endAllBATTLESHIP('app_quit');
+  sessions.clear();
+}
+
+/** Test seams: the provider every turn uses, and the retry backoff sleep. */
+export function __setBattleshipTestHooks(h: {
+  provider?: BoardTurnArgs['provider'];
+  sleep?: (ms: number) => Promise<void>;
+}): void {
+  providerOverride = h.provider;
+  sleepOverride = h.sleep;
+}
+
+/** Test-only: drop every session without analytics. */
+export function __resetBattleshipForTests(): void {
   for (const s of sessions.values()) {
-    if (s.status !== 'ended') {
-      endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
-    }
-    try { s.turnCtrl?.abort(); } catch { /* already down */ }
+    try { s.turnCtrl?.abort(); } catch { /* ignore */ }
+    s.queue?.dispose();
   }
   sessions.clear();
 }

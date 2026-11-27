@@ -1,11 +1,13 @@
 /**
  * Pure helpers for the Fleet Battle view (no three.js, no React).
  *
- * The authoritative game lives in main (src/main/battleship/). The player's
- * view of the enemy (`aiVisibleGrid`) carries cell states only, never ships,
- * so a sunk enemy ship has to be found again from its 'sunk' cells and the
- * shot history before it can be drawn; everything else here is draft and
- * placement bookkeeping for the drag-and-drop fleet setup.
+ * The authoritative game lives in main (src/main/battleship/). Until the game
+ * ends, the player's view of the enemy (`aiVisibleGrid`) carries cell states
+ * only, never ships, so a sunk enemy ship has to be found again from its
+ * 'sunk' cells and the player's shot records before it can be drawn. At game
+ * end main fills `aiVisibleGrid.ships` with the whole fleet (enemyShips).
+ * Everything else here is draft and placement bookkeeping for the
+ * drag-and-drop fleet setup.
  */
 
 import {
@@ -43,12 +45,13 @@ export function placementOfShip(ship: BATTLESHIPShip): BATTLESHIPPlacement {
 }
 
 /**
- * Enemy ships the player has sunk, rebuilt from the visible grid. Each shot
- * record that sank a ship names it; the ship is a straight run of 'sunk'
- * cells of that ship's length through the shot cell. Ships lying end to end
- * make single records ambiguous, so this picks the assignment of runs to
- * records that places the most ships without overlap, then the one with the
- * most runs that end exactly (no further 'sunk' cell beyond either end).
+ * Enemy ships the player has sunk, rebuilt from the visible grid (mid-game,
+ * while main keeps the fleet hidden). Each of the player's shot records that
+ * sank a ship names it; the ship is a straight run of 'sunk' cells of that
+ * ship's length through the shot cell. Ships lying end to end make single
+ * records ambiguous, so this picks the assignment of runs to records that
+ * places the most ships without overlap, then the one with the most runs
+ * that end exactly (no further 'sunk' cell beyond either end).
  */
 export function enemySunkShips(game: BATTLESHIPGameState): BATTLESHIPPlacement[] {
   const grid = game.aiVisibleGrid.cells;
@@ -56,12 +59,8 @@ export function enemySunkShips(game: BATTLESHIPGameState): BATTLESHIPPlacement[]
   const seenNames = new Set<BATTLESHIPShipName>();
   const options: Array<Array<{ p: BATTLESHIPPlacement; cells: string[]; exact: boolean }>> = [];
   for (const rec of game.history) {
-    if (!rec.sunkShip || seenNames.has(rec.sunkShip)) continue;
+    if (rec.by !== 'player' || !rec.sunkShip || seenNames.has(rec.sunkShip)) continue;
     if (at(rec.row, rec.col) !== 'sunk') continue;
-    // The AI sinking one of the player's ships writes a record too; that one
-    // belongs to the player's grid, where the named ship holds the cell.
-    const own = game.playerGrid.ships.find((s) => s.name === rec.sunkShip);
-    const ownHere = !!own?.sunk && own.cells.some((c) => c.row === rec.row && c.col === rec.col);
     const size = SHIP_SIZES[rec.sunkShip];
     const cands: Array<{ p: BATTLESHIPPlacement; cells: string[]; exact: boolean }> = [];
     for (const horizontal of [true, false]) {
@@ -78,7 +77,6 @@ export function enemySunkShips(game: BATTLESHIPGameState): BATTLESHIPPlacement[]
         const last = cells[cells.length - 1];
         const after = horizontal ? at(last.row, last.col + 1) : at(last.row + 1, last.col);
         const exact = before !== 'sunk' && after !== 'sunk';
-        if (ownHere && !exact) continue;
         cands.push({ p, cells: cells.map((c) => `${c.row},${c.col}`), exact });
       }
     }
@@ -110,6 +108,17 @@ export function enemySunkShips(game: BATTLESHIPGameState): BATTLESHIPPlacement[]
   };
   walk(0, 0);
   return best.placed;
+}
+
+/**
+ * The enemy ships to draw: at game end main reveals the whole fleet
+ * (`aiVisibleGrid.ships`, afloat ones included); before that only the ones
+ * the player sank, rebuilt by enemySunkShips.
+ */
+export function enemyShips(game: BATTLESHIPGameState): Array<{ placement: BATTLESHIPPlacement; sunk: boolean }> {
+  const revealed = game.aiVisibleGrid.ships;
+  if (revealed.length) return revealed.map((s) => ({ placement: placementOfShip(s), sunk: s.sunk }));
+  return enemySunkShips(game).map((placement) => ({ placement, sunk: true }));
 }
 
 /** The fleet's placement with `name` removed. */
@@ -191,40 +200,11 @@ export function canFireAt(game: BATTLESHIPGameState, pos: GridPos): boolean {
 
 export type Shooter = 'player' | 'ai';
 
-/**
- * Who fired each shot in `game.history` (player and companion shots share
- * one list). Turns strictly alternate, so only the first shooter is unknown;
- * pick the order whose shots all match the grid they landed on (a player shot
- * is a non-empty cell of the enemy grid, a companion shot one of the player's
- * grid). Falls back to counting back from whose turn it is.
- */
-export function shotOwners(game: BATTLESHIPGameState): Shooter[] {
-  const n = game.history.length;
-  const order = (first: Shooter): Shooter[] =>
-    game.history.map((_, i) => (i % 2 === 0 ? first : first === 'player' ? 'ai' : 'player'));
-  const fired = (s: Shooter, r: number, c: number): boolean => {
-    const v = (s === 'player' ? game.aiVisibleGrid : game.playerGrid).cells[r]?.[c];
-    return v === 'hit' || v === 'miss' || v === 'sunk';
-  };
-  const fits = (owners: Shooter[]): boolean => game.history.every((h, i) => fired(owners[i], h.row, h.col));
-  const a = order('player');
-  const b = order('ai');
-  const fa = fits(a);
-  const fb = fits(b);
-  if (fa && !fb) return a;
-  if (fb && !fa) return b;
-  // Ambiguous (or inconsistent): the last shot was by whoever is NOT up now.
-  if (n === 0) return [];
-  const lastBy: Shooter = game.turn === 'player' ? 'ai' : 'player';
-  const first: Shooter = (n - 1) % 2 === 0 ? lastBy : lastBy === 'player' ? 'ai' : 'player';
-  return order(first);
-}
-
-/** The companion's most recent shot, if any. */
+/** The most recent shot fired by `who` (history records both sides with `by`). */
 export function lastShotBy(game: BATTLESHIPGameState, who: Shooter): GridPos | null {
-  const owners = shotOwners(game);
   for (let i = game.history.length - 1; i >= 0; i--) {
-    if (owners[i] === who) return { row: game.history[i].row, col: game.history[i].col };
+    const h = game.history[i];
+    if (h.by === who) return { row: h.row, col: h.col };
   }
   return null;
 }

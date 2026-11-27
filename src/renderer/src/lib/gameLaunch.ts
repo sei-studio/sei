@@ -79,9 +79,9 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
     return { id: 'draw', name: t('Draw!') };
   }
   const connect4 = useConnect4Store.getState().games[characterId];
-  if (connect4 && connect4.status !== 'ended') return { id: 'CONNECT4', name: t('Forza 4') };
+  if (connect4 && connect4.status !== 'ended') return { id: 'CONNECT4', name: t('Four in a Row') };
   const bn = useBattleshipStore.getState().games[characterId];
-  if (bn && bn.status !== 'ended') return { id: 'BATTLESHIP', name: t('Battleship') };
+  if (bn && bn.status !== 'ended') return { id: 'BATTLESHIP', name: t('Fleet Battle') };
   // A screen share is not launched from the picker any more (260803: it is a
   // call control), but it still counts as active here, because the gate's real
   // job is the one exclusion that is physical: a companion cannot be watching

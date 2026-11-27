@@ -1,5 +1,5 @@
 /**
- * useConnect4Store — per-character Connect 4 games (renderer mirror).
+ * useConnect4Store: per-character Four in a Row games (renderer mirror).
  *
  * The authoritative game lives in main (src/main/connect4/); this store caches
  * the last pushed CONNECT4GameState per character and holds the panel open
@@ -26,6 +26,7 @@ interface ForzaApi {
   ): Promise<{ ok: boolean; error?: string; state: CONNECT4GameState }>;
   CONNECT4Resign(characterId: string): Promise<CONNECT4GameState>;
   CONNECT4Rematch(characterId: string): Promise<CONNECT4GameState>;
+  CONNECT4Retry(characterId: string): Promise<CONNECT4GameState>;
   CONNECT4End(characterId: string): Promise<void>;
   onCONNECT4State(cb: (state: CONNECT4GameState) => void): () => void;
 }
@@ -34,7 +35,7 @@ function connect4Api(): Partial<ForzaApi> {
   return window.sei as unknown as Partial<ForzaApi>;
 }
 
-const NOT_AVAILABLE = 'Forza 4 is not available in this build yet.';
+const NOT_AVAILABLE = 'Four in a Row is not available in this build yet.';
 
 export interface ForzaStoreState {
   /** characterId → last authoritative snapshot from main. */
@@ -46,7 +47,7 @@ export interface ForzaStoreState {
   /** characterId → hydrate (CONNECT4GetState) already attempted. */
   hydrated: Record<string, boolean>;
 
-  /** Open the Forza 4 panel for a character (pre-game card if no game yet). */
+  /** Open the Four in a Row panel for a character (pre-game card if no game yet). */
   openPanel: (characterId: string) => void;
   /** Fetch any existing game once (resume after navigation / relaunch). */
   hydrate: (characterId: string) => Promise<void>;
@@ -56,6 +57,8 @@ export interface ForzaStoreState {
   move: (characterId: string, column: number) => Promise<boolean>;
   resign: (characterId: string) => Promise<void>;
   rematch: (characterId: string) => Promise<void>;
+  /** Run the character's failed turn again (the Try again button). */
+  retry: (characterId: string) => Promise<void>;
   /** Close the panel. Ends any game in main (unfinished → 'abandoned'). */
   end: (characterId: string) => Promise<void>;
   /**
@@ -100,6 +103,14 @@ export const useConnect4Store = create<ForzaStoreState>((set, get) => {
     hydrated: {},
 
     openPanel: (characterId) => {
+      // Funnel step 1 (shape only). Once per open, not per re-render.
+      if (get().panelIntent[characterId] !== true) {
+        try {
+          window.sei.track('connect4_panel_opened', { character_id: characterId });
+        } catch {
+          /* analytics is never load-bearing */
+        }
+      }
       set((s) => ({ panelIntent: { ...s.panelIntent, [characterId]: true } }));
       void get().hydrate(characterId);
     },
@@ -155,6 +166,16 @@ export const useConnect4Store = create<ForzaStoreState>((set, get) => {
 
     rematch: async (characterId) => {
       const fn = connect4Api().CONNECT4Rematch;
+      if (!fn) return;
+      try {
+        applyState(await fn(characterId));
+      } catch {
+        /* next push reconciles */
+      }
+    },
+
+    retry: async (characterId) => {
+      const fn = connect4Api().CONNECT4Retry;
       if (!fn) return;
       try {
         applyState(await fn(characterId));

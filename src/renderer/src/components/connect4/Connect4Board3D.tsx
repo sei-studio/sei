@@ -27,6 +27,8 @@ export interface Connect4Board3DProps {
   companionName: string;
   /** Drop a disc; resolves with main's verdict. */
   onDrop?: (column: number) => Promise<boolean> | void;
+  /** Run the character's failed turn again (shown when aiTurnFailed is set). */
+  onRetry?: () => void;
 }
 
 const EMPTY_BOARD: Board = Array.from({ length: ROWS }, () => Array<CONNECT4Color | null>(COLS).fill(null));
@@ -35,7 +37,7 @@ export function colorName(c: CONNECT4Color): string {
   return c === 'r' ? 'Red' : 'Yellow';
 }
 
-export function Connect4Board3D({ game, companionName, onDrop }: Connect4Board3DProps): React.ReactElement {
+export function Connect4Board3D({ game, companionName, onDrop, onRetry }: Connect4Board3DProps): React.ReactElement {
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<Connect4Scene | null>(null);
@@ -170,9 +172,12 @@ export function Connect4Board3D({ game, companionName, onDrop }: Connect4Board3D
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const aiFailed = !!game && game.status === 'active' && !!game.aiTurnFailed;
   const turnLabel = !game
     ? ''
-    : game.aiThinking
+    : aiFailed
+      ? t("{name} couldn't move", { name: companionName })
+      : game.aiThinking
       ? t('{name} is thinking…', { name: companionName })
       : game.turn === game.playerColor
         ? t('Your turn')
@@ -205,9 +210,30 @@ export function Connect4Board3D({ game, companionName, onDrop }: Connect4Board3D
     >
       {game && game.status === 'active' ? (
         <div className={hud.topCenter}>
-          <div className={game.aiThinking ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
-            {turnLabel}
-          </div>
+          {aiFailed ? (
+            <div className={hud.turnRow}>
+              <div className={hud.turnChip} role="status">
+                {turnLabel}
+              </div>
+              {onRetry ? (
+                <button
+                  type="button"
+                  className={`${hud.sceneBtn} ${hud.retryBtn}`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetry();
+                  }}
+                >
+                  {t('Try again')}
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className={game.aiThinking ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
+              {turnLabel}
+            </div>
+          )}
         </div>
       ) : null}
 

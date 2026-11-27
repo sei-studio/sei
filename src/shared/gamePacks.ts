@@ -88,22 +88,6 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
-  // Forza 4 is a main-side minigame with no downloadable pack.
-  CONNECT4: {
-    id: 'CONNECT4',
-    name: 'Forza 4',
-    platformSpecific: false,
-    sizeHintBytes: 0,
-    requiredPaths: [],
-  },
-  // Battleship is a main-side minigame with no downloadable pack.
-  BATTLESHIP: {
-    id: 'BATTLESHIP',
-    name: 'Battleship',
-    platformSpecific: false,
-    sizeHintBytes: 0,
-    requiredPaths: [],
-  },
 };
 
 // ── Asset naming ────────────────────────────────────────────────────────────

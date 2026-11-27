@@ -46,8 +46,11 @@ export interface FleetView {
   playerShips: Array<{ placement: BATTLESHIPPlacement; sunk: boolean }>;
   playerCells: BATTLESHIPCell[][];
   enemyCells: BATTLESHIPCell[][];
-  /** Enemy ships the player has sunk (rebuilt from the visible grid). */
-  enemySunk: BATTLESHIPPlacement[];
+  /**
+   * Enemy ships to draw: mid-game the ones the player sank (rebuilt from the
+   * visible grid), at game end the whole revealed fleet (afloat ones surface).
+   */
+  enemyShips: Array<{ placement: BATTLESHIPPlacement; sunk: boolean }>;
   /** The companion's latest shot on the player's grid. */
   lastAiShot: GridPos | null;
 }
@@ -64,9 +67,6 @@ const RIM = 0.78;
 const TRAY_HALF = N / 2 + RIM;
 const BASE_TOP = 0.24;
 const RIM_TOP = 0.44;
-/** Where the trays sit in the panel height at rest: column numbers at the top, row J at the bottom. */
-const TRAYS_TOP = 0.1;
-const TRAYS_BOTTOM = 0.83;
 const WATER_Y = 0.33;
 const DOCK_TOP = 0.3;
 const DOCK_HALF_X = 3.6;
@@ -89,11 +89,24 @@ const C_RETICLE = 0xffe3a3;
 const C_AIM = 0xff8a7a;
 const C_SLICK = 0x0b2531;
 
+/**
+ * How a sunk ship lies. Most list to one side and settle low. A vertical
+ * ship lies along the view, where a big roll and a deep settle leave a thin
+ * sliver, so it lists less and stays higher. The submarine is nearly flush
+ * with the water already, so it goes stern first with the bow lifted, which
+ * reads as sinking where a roll would not.
+ */
+function sunkPose(p: BATTLESHIPPlacement): { roll: number; pitch: number; y: number } {
+  if (p.name === 'submarine') return { roll: 0.1, pitch: -0.24, y: -0.1 };
+  return p.horizontal ? { roll: 0.22, pitch: -0.07, y: -0.21 } : { roll: 0.1, pitch: -0.1, y: -0.14 };
+}
+
 interface ShipEntry {
   key: string;
   board: BoardId;
   placement: BATTLESHIPPlacement;
   outer: THREE.Group; // position + yaw
+  mesh: THREE.Mesh;
   tilt: THREE.Group; // roll / pitch / sink offset
   deck: THREE.Group; // pegs and flames riding the deck
   slick: THREE.Mesh | null;
@@ -157,6 +170,7 @@ export class FleetScene {
   private readonly matDropHot: THREE.MeshBasicMaterial;
   private readonly matSlick: THREE.MeshBasicMaterial;
   private readonly matDockShip: THREE.MeshStandardMaterial;
+  private readonly matSunk: THREE.MeshStandardMaterial;
 
   private disposed = false;
   private shipMap = new Map<string, ShipEntry>();
@@ -183,6 +197,9 @@ export class FleetScene {
   constructor(container: HTMLElement) {
     this.stage = new TabletopStage(container, {
       shadowMapSize: 2048,
+      // Water, bob and flames read fine at 15 fps, and the scene redraw is the cost.
+      ambientFps: 15,
+      ambientSleepMs: 15_000,
       shadowExtent: 13,
       keyPosition: [6, 14, 9],
     });
@@ -268,15 +285,24 @@ export class FleetScene {
     dockBoard.castShadow = true;
     dockBoard.receiveShadow = true;
     this.dock.add(dockBoard);
-    const slotMat = own(new THREE.MeshStandardMaterial({ color: 0x5c3b22, roughness: 0.8 }));
+    // Each slot: a pale routed lip around a dark recess, a little larger than
+    // the ship so it still reads with the ship sitting in it.
+    const slotMat = own(new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.85 }));
+    const lipMat = own(new THREE.MeshStandardMaterial({ color: 0xe2c193, roughness: 0.6 }));
     this.matDockShip = this.ships.material;
     for (let i = 0; i < BATTLESHIP_SHIP_NAMES.length; i++) {
       const name = BATTLESHIP_SHIP_NAMES[i];
       const size = SHIP_SIZES[name];
-      const slotGeo = own(new THREE.ShapeGeometry(roundedRect(0, -0.45, size, 0.9, 0.3), 6));
+      const lipGeo = own(new THREE.ShapeGeometry(roundedRect(-0.24, -0.6, size + 0.48, 1.2, 0.42), 6));
+      const lip = new THREE.Mesh(lipGeo, lipMat);
+      lip.rotation.x = -Math.PI / 2;
+      lip.position.set(DOCK_LEFT, DOCK_TOP + 0.002, DOCK_ROW_Z[i]);
+      lip.receiveShadow = true;
+      this.dock.add(lip);
+      const slotGeo = own(new THREE.ShapeGeometry(roundedRect(-0.16, -0.52, size + 0.32, 1.04, 0.36), 6));
       const slot = new THREE.Mesh(slotGeo, slotMat);
       slot.rotation.x = -Math.PI / 2;
-      slot.position.set(DOCK_LEFT, DOCK_TOP + 0.003, DOCK_ROW_Z[i]);
+      slot.position.set(DOCK_LEFT, DOCK_TOP + 0.004, DOCK_ROW_Z[i]);
       slot.receiveShadow = true;
       this.dock.add(slot);
       const ship = new THREE.Mesh(this.ships.geometry(name, PLAYER_PALETTE), this.matDockShip);
@@ -310,6 +336,10 @@ export class FleetScene {
     this.matSmoke = own(new THREE.MeshStandardMaterial({ color: C_SMOKE, roughness: 1, transparent: true, opacity: 0.62, flatShading: true, depthWrite: false }));
     this.matDrop = own(new THREE.MeshBasicMaterial({ color: C_FOAM }));
     this.matDropHot = own(new THREE.MeshBasicMaterial({ color: C_FLAME_CORE }));
+    // Sunk hulls: the same vertex colors, scorched darker and duller.
+    this.matSunk = own(this.ships.material.clone());
+    this.matSunk.color.setHex(0x8a7f76);
+    this.matSunk.roughness = Math.min(1, this.matSunk.roughness + 0.2);
     this.matSlick = own(new THREE.MeshBasicMaterial({ color: C_SLICK, transparent: true, opacity: 0.4, depthWrite: false }));
 
     scene.add(this.shipRoot, this.markerRoot);
@@ -348,7 +378,7 @@ export class FleetScene {
     const want = new Map<string, { board: BoardId; placement: BATTLESHIPPlacement; sunk: boolean }>();
     for (const s of view.playerShips) want.set(`player:${s.placement.name}`, { board: 'player', ...s });
     if (view.phase === 'battle') {
-      for (const p of view.enemySunk) want.set(`enemy:${p.name}`, { board: 'enemy', placement: p, sunk: true });
+      for (const e of view.enemyShips) want.set(`enemy:${e.placement.name}`, { board: 'enemy', ...e });
     }
     for (const [key, ent] of [...this.shipMap]) {
       const w = want.get(key);
@@ -361,7 +391,8 @@ export class FleetScene {
       let ent = this.shipMap.get(key);
       if (!ent) {
         ent = this.makeShip(key, w.board, w.placement);
-        // A freshly revealed enemy ship surfaces upright, then goes down.
+        // A freshly revealed enemy ship surfaces upright, then goes down
+        // (sunk) or stays afloat (the end-of-game reveal).
         if (anim && (view.phase === 'placing' || w.board === 'enemy')) ent.dropStart = now;
         if (w.sunk) ent.sinkStart = anim ? now + (w.board === 'enemy' ? 350 : 0) : Infinity;
         ent.sunk = w.sunk;
@@ -372,6 +403,7 @@ export class FleetScene {
         ent.sunk = false;
         ent.sinkStart = -1;
       }
+      ent.mesh.material = ent.sunk ? this.matSunk : this.ships.material;
       this.updateSlick(ent);
     }
 
@@ -436,7 +468,7 @@ export class FleetScene {
       const c = this.cellCenter('player', pos.row, pos.col);
       this.thinking = { pos, x: c.x, z: c.z, nextAt: performance.now() + 500 };
       this.aim.position.set(c.x, WATER_Y + 0.02, c.z);
-      this.aim.visible = !this.stage.reducedMotion;
+      this.aim.visible = !this.stage.ambientDisabled;
     }
     this.stage.wake();
     this.stage.invalidate();
@@ -557,6 +589,7 @@ export class FleetScene {
       board,
       placement,
       outer,
+      mesh,
       tilt,
       deck,
       slick: null,
@@ -810,6 +843,34 @@ export class FleetScene {
     queueMicrotask(() => this.onLayout());
   }
 
+  /**
+   * Where the trays sit in the panel height (0 top, 1 bottom) with the camera
+   * at rest: the far rims (column numbers) to the near outer edges. Measured,
+   * not assumed, because a narrow window is width-bound and the trays then
+   * fill more of the height than in a wide one.
+   */
+  private restExtent(look: THREE.Vector3, elev: number, d: number): { top: number; bottom: number } {
+    const cam = this.stage.camera;
+    this.stage.placeCamera(look, elev, d);
+    if (cam.view) cam.clearViewOffset();
+    cam.updateMatrixWorld();
+    const x = TRAY_X + TRAY_HALF;
+    let top = 1;
+    let bottom = 0;
+    const v = new THREE.Vector3();
+    for (const [px, py, pz] of [
+      [-x, RIM_TOP, -TRAY_HALF],
+      [x, RIM_TOP, -TRAY_HALF],
+      [-x, 0, TRAY_HALF],
+      [x, 0, TRAY_HALF],
+    ] as const) {
+      const fy = (1 - v.set(px, py, pz).project(cam).y) / 2;
+      top = Math.min(top, fy);
+      bottom = Math.max(bottom, fy);
+    }
+    return { top, bottom };
+  }
+
   private applyCamera(now: number): boolean {
     const aspect = this.aspect;
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.stage.camera.fov / 2));
@@ -821,9 +882,12 @@ export class FleetScene {
     // Game over: pull back and slide up so row J clears the result card.
     const shift = this.endShiftAt(now);
     this.shiftShown = shift;
-    const end = endFraming(this.viewH, TRAYS_TOP, TRAYS_BOTTOM, shift);
-    const d = Math.max(horizontal, vertical) * end.k;
-    this.stage.placeCamera(new THREE.Vector3(0, 0, 0.75), elev, d);
+    const look = new THREE.Vector3(0, 0, 0.75);
+    const rest = Math.max(horizontal, vertical);
+    const ext = shift > 0 ? this.restExtent(look, elev, rest) : { top: 0, bottom: 1 };
+    const end = endFraming(this.viewH, ext.top, ext.bottom, shift);
+    const d = rest * end.k;
+    this.stage.placeCamera(look, elev, d);
     applyLift(this.stage.camera, this.viewW, this.viewH, end.liftPx);
     this.stage.invalidate();
     return now - this.endShift.start < 700;
@@ -838,10 +902,11 @@ export class FleetScene {
       const t = ent.sinkStart === Infinity ? 1 : THREE.MathUtils.clamp((now - ent.sinkStart) / 1900, 0, 1);
       if (t < 1) moving = true;
       const e = smooth(t);
+      const pose = sunkPose(ent.placement);
       const side = ent.phase > Math.PI ? 1 : -1;
-      roll = side * 0.22 * e;
-      pitch = -0.07 * e;
-      y = -0.21 * e;
+      roll = side * pose.roll * e;
+      pitch = pose.pitch * e;
+      y = pose.y * e;
     }
     if (ent.dropStart !== -1) {
       const t = THREE.MathUtils.clamp((now - ent.dropStart) / 380, 0, 1);

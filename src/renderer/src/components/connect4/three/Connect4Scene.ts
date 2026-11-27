@@ -317,7 +317,7 @@ export class Connect4Scene {
       this.thinking = { color, col, x: cellX(col), nextAt: performance.now() + 700 };
       this.thinkGhost.material = this.ghostMats[color];
       this.thinkGhost.position.set(cellX(col), GHOST_Y, 0);
-      this.thinkGhost.visible = !this.stage.reducedMotion;
+      this.thinkGhost.visible = !this.stage.ambientDisabled;
     }
     this.stage.wake();
     this.stage.invalidate();
