@@ -199,4 +199,18 @@ export const ZH: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "无法打开结账页面",
   "Nothing was charged. Check your connection and try again.": "未产生任何扣款。请检查网络连接后重试。",
+  // 261127: Settings > Microphone.
+  "Microphone": "麦克风",
+  "Input device": "输入设备",
+  "System default": "系统默认",
+  "Microphone {n}": "麦克风 {n}",
+  "Input level": "输入音量",
+  "Stop": "停止",
+  "Sensitivity": "灵敏度",
+  "About microphone sensitivity": "关于麦克风灵敏度",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "通话中声音多容易被当作你在说话。如果呼吸声、打字声或背景噪音被收进去，就调低；如果你的伙伴听不到小声说话，就调高。",
+  "Sei is not allowed to use your microphone.": "Sei 没有使用麦克风的权限。",
+  "Could not open the microphone. Another app may be using it.": "无法打开麦克风，可能有其他应用正在使用。",
+  "The microphone you picked is not connected, so calls use the default one.": "你选择的麦克风未连接，通话将使用默认麦克风。",
+  "[using the default microphone, the one picked in Settings is not connected]": "[正在使用默认麦克风，设置中选择的麦克风未连接]",
 };

@@ -121,6 +121,8 @@ export function encodeWav(pcm: Float32Array, sampleRate = SAMPLE_RATE): ArrayBuf
  * ordinary transcript text on their own.
  */
 const LAUGH_EVENT = /[[(][^\])]*(?:laugh|giggl|chuckl)[^\])]*[\])]/gi;
+/** The same pattern without the global flag, for a stateless test(). */
+const LAUGH_EVENT_ONE = new RegExp(LAUGH_EVENT.source, 'i');
 
 /**
  * Scribe-output normalization: map laughter events to "haha", strip every
@@ -138,6 +140,24 @@ export function normalizeSttText(raw: string): string {
     .trim();
 }
 
+/**
+ * Whether a Scribe transcript is ONLY a laughter tag (261127): "(laughs)",
+ * "[laughter] (breathing)", with no word left once every tag is removed.
+ *
+ * Why: the "it keeps thinking I'm laughing when I don't say anything" report.
+ * A breath, a keyboard thump or a mouth click opens the energy VAD, the clip
+ * goes to Scribe, and Scribe tags near-silent audio as laughter often enough
+ * that the companion kept reacting to a laugh nobody made. A laugh inside real
+ * words ("(laughs) no way") is trusted as it is; a bare tag rides back as
+ * `audioEvent: 'laugh'`, and the renderer keeps it only when the clip itself
+ * had a voice in it (dictation.ts laughHasVoice).
+ */
+export function laughEventOnly(raw: string): boolean {
+  if (!LAUGH_EVENT_ONE.test(raw)) return false;
+  const rest = raw.replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  return rest.length === 0;
+}
+
 class SttUnavailable extends Error {}
 
 /** Upstream transcript + the language Scribe detected for the utterance.
@@ -152,6 +172,8 @@ type UpstreamTranscript = {
    * a word out of her echo and is unsure of it (dictation.ts
    * burstWordUnsure). Absent when the upstream does not report it. */
   minWordLogprob?: number;
+  /** 261127: the transcript was nothing but a laughter tag (laughEventOnly). */
+  audioEvent?: 'laugh';
 };
 
 /** The Scribe (or proxy) success body, before validation. */
@@ -284,6 +306,16 @@ function logSttResult(up: UpstreamTranscript, normalized: string, startedAt: num
   );
 }
 
+/** The success result: the normalized text, plus the laugh-only flag when
+ * the raw transcript was nothing but a laughter tag. */
+function withAudioEvent(up: UpstreamTranscript, normalized: string): UpstreamTranscript {
+  return {
+    ...up,
+    text: normalized,
+    ...(normalized && laughEventOnly(up.text) ? { audioEvent: 'laugh' as const } : {}),
+  };
+}
+
 /** Why cloud STT is unavailable — see the module doc + shared/ipc.ts. */
 export type SttUnavailableReason = 'no-credentials' | 'upstream';
 
@@ -293,7 +325,13 @@ export type SttUnavailableReason = 'no-credentials' | 'upstream';
 export async function voiceStt(args: {
   pcm: ArrayBuffer;
 }): Promise<
-  | { text: string; languageCode?: string; languageProbability?: number; minWordLogprob?: number }
+  | {
+      text: string;
+      languageCode?: string;
+      languageProbability?: number;
+      minWordLogprob?: number;
+      audioEvent?: 'laugh';
+    }
   | { unavailable: true; reason: SttUnavailableReason }
 > {
   const wav = encodeWav(new Float32Array(args.pcm));
@@ -313,7 +351,7 @@ export async function voiceStt(args: {
       });
       const normalized = normalizeSttText(up.text);
       logSttResult(up, normalized, startedAt);
-      return { ...up, text: normalized };
+      return withAudioEvent(up, normalized);
     }
     // BYOK with no key stored: nothing configured to call — never fall
     // through to the proxy (the user may have no session, and did not opt
@@ -330,7 +368,7 @@ export async function voiceStt(args: {
     }, true);
     const normalized = normalizeSttText(up.text);
     logSttResult(up, normalized, startedAt);
-    return { ...up, text: normalized };
+    return withAudioEvent(up, normalized);
   } catch (err) {
     if (err instanceof SttUnavailable) return { unavailable: true, reason: 'upstream' };
     throw err;

@@ -2642,4 +2642,18 @@ export const ES: Record<string, string> = {
   "submarine": "Submarino",
   "destroyer": "Destructor",
   "All ships sunk.": "Todos los barcos hundidos.",
+  // 261127: Settings > Microphone.
+  "Microphone": "Micrófono",
+  "Input device": "Dispositivo de entrada",
+  "System default": "Predeterminado del sistema",
+  "Microphone {n}": "Micrófono {n}",
+  "Input level": "Nivel de entrada",
+  "Stop": "Detener",
+  "Sensitivity": "Sensibilidad",
+  "About microphone sensitivity": "Acerca de la sensibilidad del micrófono",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "Qué tan fácil es que un sonido cuente como que hablas en una llamada. Bájala si se capta tu respiración, el teclado o el ruido de fondo. Súbela si tu compi no oye cuando hablas bajo.",
+  "Sei is not allowed to use your microphone.": "Sei no tiene permiso para usar tu micrófono.",
+  "Could not open the microphone. Another app may be using it.": "No se pudo abrir el micrófono. Puede que otra app lo esté usando.",
+  "The microphone you picked is not connected, so calls use the default one.": "El micrófono que elegiste no está conectado, así que las llamadas usan el predeterminado.",
+  "[using the default microphone, the one picked in Settings is not connected]": "[usando el micrófono predeterminado, el elegido en Ajustes no está conectado]",
 };

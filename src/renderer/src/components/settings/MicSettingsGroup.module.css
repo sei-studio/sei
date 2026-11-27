@@ -1,0 +1,47 @@
+/* Settings > Microphone (261127). Rows come from SettingsScreen.module.css;
+   this file only adds the level meter and a narrower device select. */
+
+.deviceSelect {
+  max-width: 260px;
+  text-overflow: ellipsis;
+}
+
+/* The level meter: a thin track the same weight as the slider rail, with a
+   fill that turns accent once the sound would start a turn on a call, and a
+   tick at that point. */
+.meter {
+  position: relative;
+  flex: 0 0 180px;
+  width: 180px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--muted);
+  transition: width 60ms linear;
+}
+
+.meterFillOn {
+  background: var(--accent);
+}
+
+.meterMark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.6;
+}
+
+.sensValue {
+  min-width: 3ch;
+  text-align: right;
+}

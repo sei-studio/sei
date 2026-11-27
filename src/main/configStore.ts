@@ -869,6 +869,9 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'avatar_prefs',
   'avatar_in_captures',
   'call_convo_starters',
+  // 261127: Settings > Microphone (input device + sensitivity).
+  'mic_device_id',
+  'mic_sensitivity',
   'call_backdrop',
   'chat_panel_hidden',
   'skin_setup_pending',

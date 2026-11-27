@@ -25,7 +25,7 @@ vi.mock('./elevenLabsKeyStore', () => ({
   resolveElevenLabsRoute: mockResolveRoute,
 }));
 
-import { voiceStt, encodeWav, normalizeSttText } from './stt';
+import { voiceStt, encodeWav, laughEventOnly, normalizeSttText } from './stt';
 
 const fetchSpy = vi.fn();
 
@@ -93,6 +93,20 @@ describe('normalizeSttText', () => {
   });
 });
 
+describe('laughEventOnly (261127)', () => {
+  it('is true for a transcript that is only laughter tags', () => {
+    expect(laughEventOnly('(laughs)')).toBe(true);
+    expect(laughEventOnly(' [laughter] (breathing) ')).toBe(true);
+    expect(laughEventOnly('(giggles).')).toBe(true);
+  });
+  it('is false with any word, and for non-laugh tags alone', () => {
+    expect(laughEventOnly('(laughs) no way')).toBe(false);
+    expect(laughEventOnly('(breathing)')).toBe(false);
+    expect(laughEventOnly('haha')).toBe(false);
+    expect(laughEventOnly('')).toBe(false);
+  });
+});
+
 describe('voiceStt', () => {
   it('proxy path: raw wav body + Bearer JWT, no language pin, detection relayed', async () => {
     fetchSpy.mockResolvedValue(okText('hello', { language_code: 'fr', language_probability: 0.91 }));
@@ -104,6 +118,15 @@ describe('voiceStt', () => {
     expect((init.headers as Record<string, string>)['content-type']).toBe('audio/wav');
     const body = init.body as ArrayBuffer;
     expect(body.byteLength).toBe(44 + 8_000 * 2);
+  });
+
+  it('a laugh-only transcript is flagged audioEvent "laugh"; a laugh in words is not (261127)', async () => {
+    fetchSpy.mockResolvedValueOnce(okText('(laughs)'));
+    await expect(voiceStt({ pcm: pcm() })).resolves.toMatchObject({ text: 'haha', audioEvent: 'laugh' });
+    fetchSpy.mockResolvedValueOnce(okText('(laughs) no way'));
+    const words = await voiceStt({ pcm: pcm() });
+    expect(words).toMatchObject({ text: 'haha no way' });
+    expect('audioEvent' in words).toBe(false);
   });
 
   it('direct route (dev env / BYOK key): multipart to ElevenLabs with pinned model, no language_code', async () => {

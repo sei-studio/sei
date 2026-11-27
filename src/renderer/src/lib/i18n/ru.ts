@@ -2642,4 +2642,18 @@ export const RU: Record<string, string> = {
   "submarine": "Подлодка",
   "destroyer": "Эсминец",
   "All ships sunk.": "Все корабли потоплены.",
+  // 261127: Settings > Microphone.
+  "Microphone": "Микрофон",
+  "Input device": "Устройство ввода",
+  "System default": "Системное по умолчанию",
+  "Microphone {n}": "Микрофон {n}",
+  "Input level": "Уровень входа",
+  "Stop": "Стоп",
+  "Sensitivity": "Чувствительность",
+  "About microphone sensitivity": "О чувствительности микрофона",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "Насколько легко звук считается вашей речью в звонке. Уменьшите, если микрофон ловит дыхание, клавиатуру или фоновый шум. Увеличьте, если ваш компаньон не слышит тихую речь.",
+  "Sei is not allowed to use your microphone.": "Sei не разрешено использовать ваш микрофон.",
+  "Could not open the microphone. Another app may be using it.": "Не удалось открыть микрофон. Возможно, его использует другое приложение.",
+  "The microphone you picked is not connected, so calls use the default one.": "Выбранный микрофон не подключен, поэтому в звонках используется микрофон по умолчанию.",
+  "[using the default microphone, the one picked in Settings is not connected]": "[используется микрофон по умолчанию, выбранный в настройках не подключен]",
 };

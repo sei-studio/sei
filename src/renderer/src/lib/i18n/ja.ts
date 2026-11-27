@@ -2642,4 +2642,18 @@ export const JA: Record<string, string> = {
   "submarine": "潜水艦",
   "destroyer": "駆逐艦",
   "All ships sunk.": "全艦沈没。",
+  // 261127: Settings > Microphone.
+  "Microphone": "マイク",
+  "Input device": "入力デバイス",
+  "System default": "システムの既定",
+  "Microphone {n}": "マイク {n}",
+  "Input level": "入力レベル",
+  "Stop": "停止",
+  "Sensitivity": "感度",
+  "About microphone sensitivity": "マイク感度について",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "通話中に、どのくらいの音であなたが話していると判断するかです。息づかいやタイピング、周りの音を拾ってしまうなら下げてください。小さな声が届かないなら上げてください。",
+  "Sei is not allowed to use your microphone.": "Sei にマイクの使用が許可されていません。",
+  "Could not open the microphone. Another app may be using it.": "マイクを開けませんでした。別のアプリが使用中の可能性があります。",
+  "The microphone you picked is not connected, so calls use the default one.": "選んだマイクが接続されていないため、通話では既定のマイクを使います。",
+  "[using the default microphone, the one picked in Settings is not connected]": "[既定のマイクを使用中、設定で選んだマイクが接続されていません]",
 };

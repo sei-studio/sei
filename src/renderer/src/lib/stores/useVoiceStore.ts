@@ -65,7 +65,8 @@ import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
 import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
-import type { SttHint } from '../voice/sttArbiter';
+import { micDeviceIdOf, micGateScale } from '../voice/micPrefs';
+import type { CloudPass, SttHint } from '../voice/sttArbiter';
 import {
   companionAudioGapMs,
   classifyScreenEcho,
@@ -2187,7 +2188,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // disable stays SILENT: in 'none' mode it must not raise the backup-
       // model prompt the way a genuine upstream failure does.
       let cloudSttSilentOff = false;
-      const cloudTranscribe = async (audio: Float32Array, hint?: SttHint): Promise<string | null> => {
+      const cloudTranscribe = async (audio: Float32Array, hint?: SttHint): Promise<string | CloudPass | null> => {
         if (cloudSttOff || !sei.voiceStt) return null;
         try {
           // No language pin (260725): Scribe auto-detects per utterance, and
@@ -2213,7 +2214,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
               `[sei/voice] barge: unsure burst word dropped (logprob ${res.minWordLogprob?.toFixed(2)}) — "${res.text.slice(0, 40)}"`,
             );
           }
-          return text;
+          // 261127: a bare laughter tag; the arbiter keeps it only when the
+          // clip had a voice in it (dictation.ts laughHasVoice).
+          const audioEvent = (res as { audioEvent?: 'laugh' }).audioEvent;
+          return audioEvent === 'laugh' && text ? { text, audioEvent } : text;
         } catch {
           return null; // transient — local covers this utterance, retry on the next
         }
@@ -2227,6 +2231,22 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             callCfg?.ui_language,
             typeof navigator !== 'undefined' ? navigator.language : undefined,
           ),
+          // 261127 Settings > Microphone: device + sensitivity.
+          micDeviceId: micDeviceIdOf(callCfg?.mic_device_id),
+          gateScale: micGateScale(callCfg?.mic_sensitivity),
+          onMicFallback: () => {
+            if (session !== mySession) return;
+            set({ callNotice: t('[using the default microphone, the one picked in Settings is not connected]') });
+            try {
+              sei.track('mic_device_fallback', { surface: 'call' });
+            } catch {
+              /* analytics is never load-bearing */
+            }
+          },
+          onAudioEvent: (kept) => {
+            if (session !== mySession) return;
+            interruptStats.note(kept ? 'laugh_kept' : 'laugh_dropped');
+          },
           // Output path settled — safe to schedule the ring (see ringNow).
           onMicReady: () => {
             window.clearTimeout(ringFallback);
@@ -2632,6 +2652,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
  */
 export function voiceTtsDrained(): boolean {
   return pendingTts === 0 && !(queue?.speaking() ?? false);
+}
+
+/** 261127: Settings > Microphone sensitivity moved during a call. The device
+ * choice waits for the next call (reopening the mic mid-call would reset the
+ * echo canceller); the threshold applies at once. */
+export function applyMicSensitivityToCall(sensitivity: number): void {
+  dictation?.setGateScale(micGateScale(sensitivity));
 }
 
 // Dev-only (Vite HMR): let the STALE instance release the world before the

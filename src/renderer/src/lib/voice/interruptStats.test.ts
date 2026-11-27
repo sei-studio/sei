@@ -14,8 +14,10 @@ describe('interruptStats', () => {
     s.note('manual');
     s.note('no_voice');
     s.note('cut_lines');
-    expect(s.take('a')).toEqual({ ducks: 2, cuts: 1, echo_rejected: 1, manual: 1, no_voice: 1, no_word: 0, cut_lines: 1 });
-    expect(s.take('b')).toEqual({ ducks: 1, cuts: 1, echo_rejected: 0, manual: 1, no_voice: 1, no_word: 0, cut_lines: 1 });
+    s.note('laugh_dropped');
+    const rest = { laugh_kept: 0, laugh_dropped: 1 };
+    expect(s.take('a')).toEqual({ ducks: 2, cuts: 1, echo_rejected: 1, manual: 1, no_voice: 1, no_word: 0, cut_lines: 1, ...rest });
+    expect(s.take('b')).toEqual({ ducks: 1, cuts: 1, echo_rejected: 0, manual: 1, no_voice: 1, no_word: 0, cut_lines: 1, ...rest });
   });
 
   it('take forgets the baseline, and a companion that never joined counts from reset', () => {
@@ -38,7 +40,19 @@ describe('interruptStats', () => {
   });
 
   it('maps to prefixed event props', () => {
-    expect(callInterruptProps({ ducks: 3, cuts: 1, echo_rejected: 2, manual: 4, no_voice: 5, no_word: 6, cut_lines: 7 })).toEqual({
+    expect(
+      callInterruptProps({
+        ducks: 3,
+        cuts: 1,
+        echo_rejected: 2,
+        manual: 4,
+        no_voice: 5,
+        no_word: 6,
+        cut_lines: 7,
+        laugh_kept: 8,
+        laugh_dropped: 9,
+      }),
+    ).toEqual({
       interrupt_ducks: 3,
       interrupt_cuts: 1,
       interrupt_echo_rejected: 2,
@@ -46,6 +60,8 @@ describe('interruptStats', () => {
       interrupt_no_voice: 5,
       interrupt_no_word: 6,
       interrupt_cut_lines: 7,
+      stt_laugh_kept: 8,
+      stt_laugh_dropped: 9,
     });
   });
 });

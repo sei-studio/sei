@@ -25,10 +25,11 @@
  */
 
 import { dbOf, pushEnv, type EnvSample, type MicEchoInfo } from './echoGate';
-import { createSttArbiter, type SttHint } from './sttArbiter';
+import { createSttArbiter, type CloudTranscribe, type SttHint } from './sttArbiter';
 import { whisperMirrorFirst } from './mirrorPref';
 import { tagCallSetupStage } from './callSetupFailure';
 import { isJunkTranscript } from './pfcSteer';
+import { openMicStream } from './micPrefs';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
 
@@ -52,6 +53,9 @@ export interface Dictation {
   armBargeGrace(): void;
   /** True once the mic level shows live speech (drives the UI level dot). */
   speechActive(): boolean;
+  /** 261127: Settings > Microphone sensitivity changed mid-call
+   *  (micGateScale): applies from the next frame. */
+  setGateScale(scale: number): void;
   /** Tear down mic, audio graph, and worker. */
   stop(): void;
 }
@@ -85,6 +89,18 @@ const CLOUD_STT_GRACE_MS = 400;
 // through onCloudSttFailure.
 const CLOUD_ONLY_TIMEOUT_MS = 8_000;
 const MIN_UTTERANCE_MS = 350;
+// 261127: how many frames of an utterance must clear the end-of-speech level
+// (the trigger counts as one) for it to be sent to STT at all. MIN_UTTERANCE_MS
+// above never caught a click: it measures the whole clip, and the clip always
+// carries the pre-roll and the END_SILENCE_MS run behind the trigger, so a
+// single 128 ms frame of keyboard, breath or desk thump became a ~1 s clip and
+// a cloud pass ("it keeps thinking I'm laughing when I don't say anything").
+// Two frames (~256 ms) of sound is still shorter than any spoken word.
+const MIN_LOUD_FRAMES = 2;
+// 261127: the sensitivity slider (micPrefs.micGateScale) scales the open
+// threshold by 0.5..2; anything outside is clamped to that.
+const GATE_SCALE_MIN = 0.5;
+const GATE_SCALE_MAX = 2;
 const MAX_UTTERANCE_MS = 15_000;
 // Frames kept before speech opens. The trigger frame itself lands in preRoll
 // (pushed before the threshold check), so this is trigger + 2 true
@@ -569,6 +585,84 @@ export function hasSpokenWord(text: string): boolean {
 }
 
 /**
+ * Voiced time in a clip (261127): how many ms of it sound like a VOICE, not
+ * just like sound. A 32 ms window counts when it is loud enough (`energyBar`,
+ * the VAD's open threshold for the clip), crosses zero rarely enough to be a
+ * vowel rather than hiss (breath, fans, keyboard rattle are noise-like and
+ * cross constantly), and repeats itself at a pitch period between ~80 and
+ * ~600 Hz (normalized autocorrelation). A laugh is a run of voiced "ha"
+ * pulses, so it clears this easily; a breath or a click does not.
+ *
+ * Only run on demand (an audio-event-only cloud pass, laughHasVoice), so the
+ * per-frame VAD stays as cheap as it was.
+ */
+const VOICE_WIN = 512; // 32 ms at 16 kHz
+const VOICE_MIN_LAG = 26; // ~615 Hz
+const VOICE_MAX_LAG = 200; // 80 Hz
+const VOICE_MAX_ZCR = 0.25;
+const VOICE_MIN_CORR = 0.5;
+export function voicedMsOf(audio: Float32Array, energyBar: number): number {
+  let voiced = 0;
+  for (let start = 0; start + VOICE_WIN <= audio.length; start += VOICE_WIN) {
+    let e = 0;
+    let crossings = 0;
+    for (let i = start; i < start + VOICE_WIN; i += 1) {
+      e += audio[i] * audio[i];
+      if (i > start && (audio[i] >= 0) !== (audio[i - 1] >= 0)) crossings += 1;
+    }
+    if (Math.sqrt(e / VOICE_WIN) < energyBar) continue;
+    if (crossings / VOICE_WIN > VOICE_MAX_ZCR) continue;
+    let best = 0;
+    for (let lag = VOICE_MIN_LAG; lag <= VOICE_MAX_LAG; lag += 1) {
+      let xy = 0;
+      let xx = 0;
+      let yy = 0;
+      for (let i = start; i + lag < start + VOICE_WIN; i += 1) {
+        const a = audio[i];
+        const b = audio[i + lag];
+        xy += a * b;
+        xx += a * a;
+        yy += b * b;
+      }
+      const r = xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0;
+      if (r > best) best = r;
+    }
+    if (best >= VOICE_MIN_CORR) voiced += 1;
+  }
+  return (voiced * VOICE_WIN * 1000) / SAMPLE_RATE;
+}
+
+/** 261127: the voiced time an audio-event-only "(laughs)" needs behind it to
+ *  reach the companion as "haha". A short real laugh carries well over this;
+ *  silence, breath and clicks carry none. */
+export const LAUGH_MIN_VOICED_MS = 150;
+
+/** Whether a clip Scribe tagged only as laughter had a voice in it. The
+ *  clip's own open threshold rides on the hint (postTranscribe); a pass with
+ *  none is judged at the absolute floor. */
+export function laughHasVoice(audio: Float32Array, hint?: SttHint): boolean {
+  return voicedMsOf(audio, hint?.voiceBar ?? START_RMS_FLOOR) >= LAUGH_MIN_VOICED_MS;
+}
+
+/** The VAD's speech-open level for a noise floor and sensitivity scale. */
+export function openThresholdOf(noiseFloor: number, gateScale = 1): number {
+  return Math.max(START_RMS_FLOOR * gateScale, noiseFloor * START_FACTOR * gateScale);
+}
+
+/** The level an open utterance must stay above to count as still sounding.
+ *  Scales gentler than the open bar (square root) so a very sensitive
+ *  setting cannot set it at the room's own noise and never end a turn. */
+export function endThresholdOf(noiseFloor: number, gateScale = 1): number {
+  return Math.max(START_RMS_FLOOR * 0.7 * gateScale, noiseFloor * 2 * Math.sqrt(gateScale));
+}
+
+function clampGateScale(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v)
+    ? Math.min(GATE_SCALE_MAX, Math.max(GATE_SCALE_MIN, v))
+    : 1;
+}
+
+/**
  * AudioWorklet processor (issue: ScriptProcessorNode is deprecated). Batches
  * the 128-sample render quanta into FRAME_SIZE frames and posts them to the
  * main thread (transferred, zero-copy). Inlined as a blob module so it needs
@@ -643,7 +737,7 @@ export async function createDictation(opts: {
    * utterance races this against the local worker (see sttArbiter.ts —
    * bounded grace, local always the fallback). Resolve null on any failure
    * or when cloud STT is unavailable; must not reject. */
-  cloudTranscribe?: (audio: Float32Array, hint?: SttHint) => Promise<string | null>;
+  cloudTranscribe?: CloudTranscribe;
   /** 260725 STT policy: 'eager' (default) boots the local Whisper worker up
    * front (today's behavior — cloud races it when configured). 'none' skips
    * the worker AND the ~40MB model download entirely: the mic/VAD pipeline
@@ -698,6 +792,17 @@ export async function createDictation(opts: {
    * reason — see startRingtone's caller.
    */
   onMicReady?: () => void;
+  /** 261127 Settings > Microphone: the saved input device (absent = the
+   *  system default) and the sensitivity scale (micPrefs.micGateScale; 1 is
+   *  the threshold every earlier build used). */
+  micDeviceId?: string;
+  gateScale?: number;
+  /** The saved device was missing, so the system default is in use. Fired
+   *  once, right after the mic opens. */
+  onMicFallback?: () => void;
+  /** An audio-event-only cloud pass (Scribe's bare "(laughs)") was kept or
+   *  dropped by laughHasVoice. Counts only. */
+  onAudioEvent?: (kept: boolean) => void;
 }): Promise<Dictation> {
   const useLocalModel = (opts.localModel ?? 'eager') !== 'none';
   // 260816: the SenseVoice engine runs in MAIN (sherpa), so no worker boots —
@@ -776,22 +881,22 @@ export async function createDictation(opts: {
   }
 
   let stream: MediaStream;
+  let micFellBack = false;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        // Echo cancellation is load-bearing: it subtracts the companion's TTS
-        // (played by this same page) from the mic signal.
-        echoCancellation: true,
-        noiseSuppression: true,
-        // autoGainControl OFF (260706): AGC dynamically boosts a quiet mic, which
-        // makes our absolute-RMS energy VAD read "hotter" (ambient noise + speaker
-        // echo cross the thresholds) and fights AEC's convergence — the "mic feels
-        // too sensitive" report. Off gives a stable signal the fixed thresholds
-        // can trust, which is the standard choice for energy-based VAD pipelines.
-        autoGainControl: false,
-      },
-    });
+    // Constraints live in micPrefs.micAudioConstraints (261127), shared with
+    // the Settings level meter:
+    //   - Echo cancellation is load-bearing: it subtracts the companion's TTS
+    //     (played by this same page) from the mic signal.
+    //   - autoGainControl OFF (260706): AGC dynamically boosts a quiet mic,
+    //     which makes our absolute-RMS energy VAD read "hotter" (ambient noise
+    //     + speaker echo cross the thresholds) and fights AEC's convergence,
+    //     the "mic feels too sensitive" report. Off gives a stable signal the
+    //     fixed thresholds can trust, which is the standard choice for
+    //     energy-based VAD pipelines.
+    // A saved device that is gone opens the system default instead.
+    const opened = await openMicStream(opts.micDeviceId);
+    stream = opened.stream;
+    micFellBack = opened.fellBack;
   } catch (err) {
     worker?.terminate();
     opts.onStatus('error', 'microphone permission denied');
@@ -802,6 +907,7 @@ export async function createDictation(opts: {
   // Output path is now settled (see onMicReady): anything the caller wants to
   // PLAY can be scheduled from here without the AEC switch swallowing it.
   opts.onMicReady?.();
+  if (micFellBack) opts.onMicFallback?.();
 
   try {
     await ready;
@@ -936,6 +1042,11 @@ export async function createDictation(opts: {
    * across clips: the playback device and volume don't change mid-call. */
   let holdResidue = 0.008;
   let noiseFloor = 0.008;
+  /** Settings > Microphone sensitivity (261127), as a threshold multiplier. */
+  let gateScale = clampGateScale(opts.gateScale);
+  /** Frames of the open utterance that cleared the end-of-speech level, the
+   *  trigger included (MIN_LOUD_FRAMES). */
+  let loudFrames = 0;
   let inSpeech = false;
   let silenceMs = 0;
   let speechMs = 0;
@@ -1014,6 +1125,12 @@ export async function createDictation(opts: {
     cloud: opts.cloudTranscribe ?? null,
     graceMs: CLOUD_STT_GRACE_MS,
     cloudTimeoutMs: CLOUD_ONLY_TIMEOUT_MS,
+    // 261127: Scribe's bare "(laughs)" needs a voice in the clip behind it.
+    acceptAudioEvent: laughHasVoice,
+    onAudioEvent: (kept) => {
+      if (!kept) console.log('[sei/voice] stt: dropped a laugh-only transcript, no voice in the clip');
+      opts.onAudioEvent?.(kept);
+    },
     onCloudFailure: () => {
       if (cloudFailureFired) return;
       cloudFailureFired = true;
@@ -1035,7 +1152,9 @@ export async function createDictation(opts: {
     }
     const id = nextId++;
     inflight.set(id, cb);
-    void transcribe(audio, hint).then((text) => {
+    // The clip's open threshold, snapshotted now (the floor keeps moving).
+    const passHint: SttHint = { ...hint, voiceBar: openThresholdOf(noiseFloor, gateScale) };
+    void transcribe(audio, passHint).then((text) => {
       const deliver = inflight.get(id);
       if (!deliver) return; // cancelled (cancelEager / discarded short utterance)
       inflight.delete(id);
@@ -1049,6 +1168,7 @@ export async function createDictation(opts: {
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
+    loudFrames = 0;
     utterance = [];
     cancelEager();
     // Abandoning an utterance that was still provisional (mute, teardown, a
@@ -1168,12 +1288,17 @@ export async function createDictation(opts: {
     committedWord = null;
     const deliver = (text: string): void =>
       settleDelivery(orCommitted(text, fallback), t0, t1, env, barge, false, speechEnd);
+    // 261127: one loud frame inside a clip of pre-roll and silence is a click
+    // or a breath, never a word (MIN_LOUD_FRAMES). A barge is exempt: the
+    // barge machinery decides those (its utterances start at the bar).
+    const transient = !s && !fallback && loudFrames < MIN_LOUD_FRAMES;
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
+    loudFrames = 0;
     utterance = [];
     emitSpeech(false);
-    if (speechMsOf(frames) < MIN_UTTERANCE_MS) {
+    if (speechMsOf(frames) < MIN_UTTERANCE_MS || transient) {
       if (pendingEager) {
         pendingEager.cancelled = true;
         inflight.delete(pendingEager.id);
@@ -1482,6 +1607,7 @@ export async function createDictation(opts: {
     inSpeech = true;
     speechMs = frameMs;
     silenceMs = 0;
+    loudFrames = 1;
     // Both call sites push the trigger frame into preRoll BEFORE opening, so
     // preRoll already ends with it — spreading it alone is the whole
     // utterance head. Re-pushing the trigger frame here (the pre-260725 bug)
@@ -1584,6 +1710,7 @@ export async function createDictation(opts: {
             flushedBarge = null;
           }
           openSpeech(frameMs);
+          loudFrames = MIN_LOUD_FRAMES; // exempt: the barge stages decide it
           suspect = {
             since: performance.now(),
             asked: false,
@@ -1616,7 +1743,7 @@ export async function createDictation(opts: {
     if (!inSpeech) {
       // Adapt the noise floor only outside speech so talking doesn't raise it.
       noiseFloor = noiseFloor * (1 - NOISE_ADAPT) + rms * NOISE_ADAPT;
-      const threshold = Math.max(START_RMS_FLOOR, noiseFloor * START_FACTOR);
+      const threshold = openThresholdOf(noiseFloor, gateScale);
       preRoll.push(frame.slice());
       if (preRoll.length > PRE_ROLL_FRAMES) preRoll.shift();
       if (rms >= threshold) openSpeech(frameMs);
@@ -1626,7 +1753,8 @@ export async function createDictation(opts: {
     utterance.push(frame.slice());
     speechMs += frameMs;
     if (suspect) confirmBarge(rms);
-    const endThreshold = Math.max(START_RMS_FLOOR * 0.7, noiseFloor * 2);
+    const endThreshold = endThresholdOf(noiseFloor, gateScale);
+    if (rms >= endThreshold) loudFrames += 1;
     if (rms < endThreshold) {
       silenceMs += frameMs;
       // Provisional transcription: overlap Whisper with the rest of the
@@ -1638,7 +1766,10 @@ export async function createDictation(opts: {
         silenceMs >= EAGER_SILENCE_MS &&
         !eager &&
         !suspect &&
-        speechMsOf(utterance) >= MIN_UTTERANCE_MS
+        speechMsOf(utterance) >= MIN_UTTERANCE_MS &&
+        // 261127: a click is not worth a pass (MIN_LOUD_FRAMES); the flush
+        // drops it when its silence run ends.
+        (loudFrames >= MIN_LOUD_FRAMES || committedWord !== null)
       ) {
         const e: Eager = { id: 0, cancelled: false, wanted: false, done: false, text: null };
         e.id = postTranscribe(utterance, (text) => {
@@ -1759,6 +1890,9 @@ export async function createDictation(opts: {
       if (inSpeech && !suspect) flushUtterance();
     },
     speechActive: () => inSpeech,
+    setGateScale(scale) {
+      gateScale = clampGateScale(scale);
+    },
     stop() {
       emitSpeech(false);
       try { captureNode.port.onmessage = null; } catch { /* torn down */ }

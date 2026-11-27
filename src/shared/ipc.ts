@@ -2889,9 +2889,13 @@ export interface RendererApi {
    * 261101: plus `minWordLogprob`, Scribe's confidence in its least sure word,
    * when the upstream reports it (direct ElevenLabs always; the proxy once it
    * relays `min_word_logprob`). The barge check reads it on a burst.
+   *
+   * 261127: plus `audioEvent: 'laugh'` when Scribe heard nothing but a
+   * laughter tag (main voice/stt.ts laughEventOnly). The renderer keeps that
+   * "haha" only when the clip had a voice in it (dictation.ts laughHasVoice).
    */
   voiceStt(args: { pcm: ArrayBuffer }): Promise<
-    | { text: string; minWordLogprob?: number }
+    | { text: string; minWordLogprob?: number; audioEvent?: 'laugh' }
     | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
   >;
   /**
