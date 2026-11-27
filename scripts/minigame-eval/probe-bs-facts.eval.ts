@@ -73,7 +73,7 @@ describe('probe: Fleet Battle whose-ship facts in chat', () => {
         trial: t,
         theirSunk: st.playerGrid.ships.filter((s) => s.sunk).map((s) => s.name),
         aiShots: st.history.filter((h) => h.by === 'ai').map((h) => ({ row: h.row, col: h.col, hit: h.hit, sunk: h.sunkShip })),
-        facts: (lastBlock.match(/Facts the app checked[^\n]*/) ?? [''])[0],
+        facts: (lastBlock.replace(/\\n/g, '\n').match(/Facts the app checked[\s\S]*?Next shot:[^\n]*/) ?? [''])[0],
         reply: spoken.slice(before).filter((x) => x.id === id).map((x) => x.text),
         cost: meter.cost,
       });
