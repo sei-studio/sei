@@ -919,7 +919,7 @@ async function contractBlock(s: Session): Promise<string> {
     chatReplyRule(),
     'When you talk to them between moves, the same goes: never say which column you will play next.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
-      'The app tells you whose turn it is.',
+      'Lines starting with "(game)" come from the app, never from them. The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
   ].join('\n\n');
 }
