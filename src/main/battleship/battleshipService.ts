@@ -1169,11 +1169,12 @@ export function chatFactsText(f: {
     'Facts the app checked. Anything you say about the game has to match them.',
     `Your ships ${P} has sunk: ${sunk(f.yourShips)}. ${P}'s ships you have sunk: ${sunk(f.theirShips)}.`,
     `${P}'s last shots, on your board, newest first: ${last('player', 'your')}.`,
-    `Your last shots, on ${P}'s board, newest first: ${last('ai', `${P}'s`)}.`,
+    `Your last shots, at ${P}'s fleet (cells ${P} never shoots at), newest first: ${last('ai', `${P}'s`)}.`,
     `${P}'s open hits on your board, ships not sunk yet: ${f.theirOpenHits.join(', ') || 'none'}.`,
     `Next shot: ${f.turn === 'ai' ? 'yours' : `${P}'s`}.`,
     `Talking to ${P}, "you" is ${P} and "my" is yours: ${P}'s shots sink your ships, and yours sink theirs. ` +
-      `${P} only shoots at your board, so a tip for ${P} can only be about ${P}'s open hits there, never about your own shots.`,
+      `If ${P} asks where to shoot, the only cells worth naming are ${P}'s open hits on your board, or none; ` +
+      'never name a cell you shot at.',
   ].join('\n');
 }
 
