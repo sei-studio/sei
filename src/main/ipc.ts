@@ -2054,7 +2054,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       _event,
       argsRaw: unknown,
     ): Promise<
-      { text: string; minWordLogprob?: number } | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
+      | { text: string; minWordLogprob?: number; audioEvent?: 'laugh' }
+      | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
     > => {
       const args = z
         .object({
@@ -2070,6 +2071,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         return {
           text: res.text,
           ...(res.minWordLogprob !== undefined ? { minWordLogprob: res.minWordLogprob } : {}),
+          ...(res.audioEvent ? { audioEvent: res.audioEvent } : {}),
         };
       }
       return res;
@@ -2336,6 +2338,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             no_word: z.number().int().nonnegative().default(0),
             // 261112: absent from an older renderer = 0.
             cut_lines: z.number().int().nonnegative().default(0),
+            // 261127: laugh-only STT passes kept / dropped (callInterrupts.ts).
+            laugh_kept: z.number().int().nonnegative().default(0),
+            laugh_dropped: z.number().int().nonnegative().default(0),
           })
           .optional(),
       })

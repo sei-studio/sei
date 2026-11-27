@@ -2410,4 +2410,18 @@ export const IT: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "Impossibile aprire il pagamento",
   "Nothing was charged. Check your connection and try again.": "Non è stato addebitato nulla. Controlla la connessione e riprova.",
+  // 261127: Settings > Microphone.
+  "Microphone": "Microfono",
+  "Input device": "Dispositivo di ingresso",
+  "System default": "Predefinito di sistema",
+  "Microphone {n}": "Microfono {n}",
+  "Input level": "Livello di ingresso",
+  "Stop": "Ferma",
+  "Sensitivity": "Sensibilità",
+  "About microphone sensitivity": "Informazioni sulla sensibilità del microfono",
+  "How easily sound counts as you talking on a call. Turn it down if breathing, typing or background noise gets picked up. Turn it up if your companion misses quiet speech.": "Quanto facilmente un suono conta come se stessi parlando in chiamata. Abbassala se vengono captati respiro, digitazione o rumori di fondo. Alzala se il personaggio non sente quando parli piano.",
+  "Sei is not allowed to use your microphone.": "Sei non ha il permesso di usare il microfono.",
+  "Could not open the microphone. Another app may be using it.": "Impossibile aprire il microfono. Forse lo sta usando un'altra app.",
+  "The microphone you picked is not connected, so calls use the default one.": "Il microfono che hai scelto non è collegato, quindi le chiamate usano quello predefinito.",
+  "[using the default microphone, the one picked in Settings is not connected]": "[uso il microfono predefinito, quello scelto nelle Impostazioni non è collegato]",
 };

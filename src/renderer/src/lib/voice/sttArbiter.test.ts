@@ -83,6 +83,85 @@ describe('createSttArbiter', () => {
     await expect(t(AUDIO)).resolves.toBe('haha');
   });
 
+  it('the laughter path keeps a laugh-only pass when the clip had a voice in it (261127)', async () => {
+    const accept = vi.fn(() => true);
+    const onAudioEvent = vi.fn();
+    const t = createSttArbiter({
+      local: () => after(5, ''),
+      cloud: () => after(200, { text: 'haha', audioEvent: 'laugh' as const }),
+      graceMs: 40,
+      acceptAudioEvent: accept,
+      onAudioEvent,
+    });
+    await expect(t(AUDIO, { voiceBar: 0.02 })).resolves.toBe('haha');
+    expect(accept).toHaveBeenCalledWith(AUDIO, { voiceBar: 0.02 });
+    expect(onAudioEvent).toHaveBeenCalledWith(true);
+  });
+
+  it('the laughter path drops a laugh-only pass with no voice behind it (silence, breath, a click)', async () => {
+    const onAudioEvent = vi.fn();
+    const t = createSttArbiter({
+      local: () => after(5, ''),
+      cloud: () => after(60, { text: 'haha', audioEvent: 'laugh' as const }),
+      graceMs: 40,
+      acceptAudioEvent: () => false,
+      onAudioEvent,
+    });
+    await expect(t(AUDIO)).resolves.toBe('');
+    expect(onAudioEvent).toHaveBeenCalledWith(false);
+  });
+
+  it('a laugh inside real words is not an audio-event pass and is never judged', async () => {
+    const accept = vi.fn(() => false);
+    const t = createSttArbiter({
+      local: () => after(5, ''),
+      cloud: () => after(20, { text: 'haha no way' }),
+      graceMs: 40,
+      acceptAudioEvent: accept,
+    });
+    await expect(t(AUDIO)).resolves.toBe('haha no way');
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it('a laugh-only pass that wins the race is judged too', async () => {
+    const t = createSttArbiter({
+      local: () => after(80, 'you'),
+      cloud: () => after(5, { text: 'haha', audioEvent: 'laugh' as const }),
+      graceMs: 40,
+      acceptAudioEvent: () => false,
+    });
+    await expect(t(AUDIO)).resolves.toBe('');
+  });
+
+  it('a laugh-only pass the race discards is not counted', async () => {
+    const onAudioEvent = vi.fn();
+    const t = createSttArbiter({
+      local: () => after(5, 'real words'),
+      cloud: () => after(150, { text: 'haha', audioEvent: 'laugh' as const }),
+      graceMs: 20,
+      acceptAudioEvent: () => false,
+      onAudioEvent,
+    });
+    await expect(t(AUDIO)).resolves.toBe('real words');
+    await after(200, null);
+    expect(onAudioEvent).not.toHaveBeenCalled();
+  });
+
+  it('cloud-only mode: a laugh-only pass needs a voice too, and is not a cloud failure', async () => {
+    const onCloudFailure = vi.fn();
+    const pass = { text: 'haha', audioEvent: 'laugh' as const };
+    const drop = createSttArbiter({ local: null, cloud: async () => pass, graceMs: 50, acceptAudioEvent: () => false, onCloudFailure });
+    await expect(drop(AUDIO)).resolves.toBe('');
+    const keep = createSttArbiter({ local: null, cloud: async () => pass, graceMs: 50, acceptAudioEvent: () => true, onCloudFailure });
+    await expect(keep(AUDIO)).resolves.toBe('haha');
+    expect(onCloudFailure).not.toHaveBeenCalled();
+  });
+
+  it('with no acceptAudioEvent configured a laugh-only pass is kept as before', async () => {
+    const t = createSttArbiter({ local: null, cloud: async () => ({ text: 'haha', audioEvent: 'laugh' as const }), graceMs: 50 });
+    await expect(t(AUDIO)).resolves.toBe('haha');
+  });
+
   it('empty local + failed cloud still resolves empty (utterance dropped as before)', async () => {
     const t = createSttArbiter({
       local: () => after(5, ''),

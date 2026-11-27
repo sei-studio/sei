@@ -46,6 +46,7 @@ import type { AvatarMode, UserConfig } from '@shared/characterSchema';
 import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 import { SearchSettingsSection } from '../components/settings/SearchSettingsSection';
+import { MicSettingsGroup } from '../components/settings/MicSettingsGroup';
 import { LocalImportRow } from '../components/settings/LocalImportRow';
 import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
@@ -402,6 +403,22 @@ export function SettingsScreen(): React.ReactElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (clip_that) failed', err);
+      setCfg(prev);
+    }
+  };
+
+  // Microphone (261127): input device + sensitivity. Optimistic like Clip
+  // That; a failed save rolls the row back.
+  const onSaveMic = async (patch: { mic_device_id?: string; mic_sensitivity?: number }): Promise<void> => {
+    if (!cfg) return;
+    const prev = cfg;
+    const updated: UserConfig = { ...cfg, ...patch };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (mic) failed', err);
       setCfg(prev);
     }
   };
@@ -961,6 +978,13 @@ export function SettingsScreen(): React.ReactElement {
             onFps={(next) => void onSaveClipThat({ clip_fps: next })}
           />
         </div>
+
+        {/* ── Microphone (261127): device, live level, sensitivity ── */}
+        <MicSettingsGroup
+          deviceId={cfg?.mic_device_id}
+          sensitivity={cfg?.mic_sensitivity}
+          onSave={(patch) => void onSaveMic(patch)}
+        />
 
         {/* ── About ───────────────────────────────────────────── */}
         <div className={styles.group}>
