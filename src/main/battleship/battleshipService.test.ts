@@ -67,7 +67,13 @@ import {
   getBATTLESHIPState,
   __setBattleshipTestHooks,
   __resetBattleshipForTests,
+  openHitsText,
+  firedCellsText,
+  chatFactsText,
+  placementLean,
+  openingLean,
 } from './battleshipService';
+import type { BATTLESHIPGrid, BATTLESHIPShip } from '../../shared/battleshipIpc';
 import { loadConfig } from '../configStore';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
@@ -528,5 +534,150 @@ describe('Fleet Battle shots', () => {
     await placeFleet(CHAR, PLAYER_FLEET);
     await waitFor(() => state().status === 'active' && state().aiShots === 1);
     expect(state().history[0].by).toBe('ai');
+  });
+});
+
+// ── 261128 eval fixes: what the character is shown (display only, never a move) ──
+
+function gridWith(marks: Record<string, 'hit' | 'miss' | 'sunk' | 'ship'>): BATTLESHIPGrid {
+  const cells = Array.from({ length: 10 }, () => Array<BATTLESHIPGrid['cells'][number][number]>(10).fill('empty'));
+  for (const [name, v] of Object.entries(marks)) {
+    const c = parseBattleshipCell(name)!;
+    cells[c.row][c.col] = v;
+  }
+  return { cells, ships: [] };
+}
+
+/** The grid rows ("A  . . X") of a JSON-encoded prompt text. */
+const gridRows = (json: string): string[] => json.split('\\n').filter((l) => /^[A-J]  /.test(l));
+
+describe('Fleet Battle prompt facts', () => {
+  it('open hits list only unsunk hits, each with the neighbours not fired at', () => {
+    const g = gridWith({ A2: 'hit', A1: 'miss', E5: 'hit', E6: 'hit', E4: 'miss', H8: 'sunk', H9: 'sunk' });
+    expect(openHitsText(g)).toBe(
+      'Your open hits, on ships not sunk yet: A2 (next to it, not fired yet: B2, A3); ' +
+        'E5 (next to it, not fired yet: D5, F5); E6 (next to it, not fired yet: D6, F6, E7).',
+    );
+    expect(openHitsText(gridWith({ H8: 'sunk', C3: 'miss' }))).toMatch(/^Your open hits: none/);
+  });
+
+  it('the fired set is listed, and past half the board the open cells instead', () => {
+    expect(firedCellsText(gridWith({}))).toBe('');
+    expect(firedCellsText(gridWith({ C3: 'miss', A1: 'hit', J10: 'sunk' }))).toBe(
+      'Cells you already fired at (never again): A1, C3, J10.',
+    );
+    const marks: Record<string, 'miss'> = {};
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) if (!(r === 9 && c >= 7)) marks[battleshipCellName(r, c)] = 'miss';
+    expect(firedCellsText(gridWith(marks))).toBe(
+      'You fired at 97 cells. The only cells you have not fired at: J8, J9, J10.',
+    );
+  });
+
+  it('chat facts say who sank what and the last shots from its own side', () => {
+    const ship = (name: BATTLESHIPShip['name'], sunk: boolean): BATTLESHIPShip => ({ name, size: 2, cells: [], sunk });
+    const text = chatFactsText({
+      theirShips: [ship('carrier', false), ship('destroyer', true)],
+      yourShips: [ship('battleship', true), ship('cruiser', false)],
+      history: [
+        { by: 'ai', row: 0, col: 0, hit: false, sunkShip: null },
+        { by: 'player', row: 4, col: 4, hit: true, sunkShip: null },
+        { by: 'ai', row: 1, col: 1, hit: true, sunkShip: null },
+        { by: 'ai', row: 1, col: 2, hit: true, sunkShip: 'destroyer' },
+        { by: 'player', row: 5, col: 4, hit: true, sunkShip: 'battleship' },
+      ],
+      turn: 'ai',
+    });
+    expect(text).toContain('You sank 1 of 2 (destroyer) of their ships. They sank 1 of 2 (battleship) of yours.');
+    expect(text).toContain('Your last shots at their ships, newest first: B3 sank their destroyer, B2 hit.');
+    expect(text).toContain('Their last shots at your ships, newest first: F5 sank your battleship, E5 hit.');
+    expect(text).toContain('Next shot: yours.');
+  });
+
+  it('the per-game nudges vary game to game and follow the injected randomness', () => {
+    const places = new Set(Array.from({ length: 300 }, () => placementLean()));
+    const regions = new Set([...places].map((t) => t.match(/lean toward (the [a-z ]+)/)![1]));
+    expect(regions.size).toBe(6);
+    const openings = new Set(Array.from({ length: 300 }, () => openingLean()));
+    expect(openings.size).toBe(9);
+    // Deterministic for a given source; the first and last region of each list.
+    expect(placementLean(() => 0)).toBe(
+      'So they cannot guess your layout, this game lean toward the top left (rows A to E, columns 1 to 5), ' +
+        'and mix ships running right and down. A few cells you could start a ship from: A1, A2, A3.',
+    );
+    expect(placementLean(() => 0.999)).toMatch(/lean toward the whole board, spread out,.*from: J10, J9, J8\.$/);
+    expect(openingLean(() => 0)).toBe(
+      'This is your first shot of the game. Pick a cell somewhere in the top left (rows A to C, columns 1 to 3) of their board.',
+    );
+    expect(openingLean(() => 0.5)).toContain('the center (rows D to G, columns 4 to 7)');
+  });
+});
+
+describe('Fleet Battle turns after the 261128 eval', () => {
+  it('placement carries the per-game lean; the log names no cells; chat hides its ships and gets the facts', async () => {
+    __setBattleshipTestHooks({ provider, sleep: async () => {}, random: () => 0.999 });
+    await startBattle();
+    const placeCall = calls[0];
+    expect(lastUserText(placeCall)).toContain('lean toward the whole board, spread out');
+    calls = [];
+    reply = () => ({ content: [text('nice try')] });
+    await handlePlayerChat({ characterId: CHAR, text: 'where are your ships?' });
+    const sent = JSON.stringify(calls[0].messages);
+    expect(sent).toContain('(game) You placed your fleet.');
+    expect(sent).not.toMatch(/carrier A1|A1 to A5/);
+    const block = lastUserText(calls[0]);
+    const rows = gridRows(block);
+    expect(rows).toHaveLength(20);
+    expect(rows.join('')).not.toMatch(/S/);
+    expect(block).toContain('Facts the app checked');
+    expect(block).toContain('You sank 0 of 5 of their ships. They sank 0 of 5 of yours.');
+    expect(block).toContain('Next shot: theirs.');
+    expect(block).toContain('They just said to you: \\"where are your ships?\\"');
+  });
+
+  it('a line sent while its shot runs is quoted and placed after the shot and the line it said', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    reply = async (p) => {
+      if (isPlaceTurn(p)) return { content: [toolUse('place_fleet', AI_FLEET)] };
+      if (lastUserText(p).includes('They just said to you')) return { content: [text('sure, watch me')] };
+      await gate;
+      return { content: [toolUse('fire', { cell: 'J10', say: 'here goes' })] };
+    };
+    await startBattle({ playerStarts: false });
+    await waitFor(() => calls.length >= 2); // its first shot is in flight
+    const chat = handlePlayerChat({ characterId: CHAR, text: 'can you teach me?' });
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    const res = await chat;
+    expect(res?.replies.map((m) => m.text)).toEqual(['sure, watch me']);
+    const chatCall = calls.find((c) => lastUserText(c).includes('They just said to you'))!;
+    const msgs = chatCall.messages as Array<{ role: string; content: unknown }>;
+    const last = JSON.stringify(msgs[msgs.length - 1]);
+    expect(last).toContain('can you teach me?');
+    expect(last.indexOf('can you teach me?')).toBeLessThan(last.indexOf('Facts the app checked'));
+    // In time order the line sat before the shot and before "here goes".
+    const whole = JSON.stringify(msgs);
+    expect(whole.indexOf('You fired at J10')).toBeGreaterThan(-1);
+    expect(whole.indexOf('You fired at J10')).toBeLessThan(whole.indexOf('can you teach me?'));
+    expect(whole.indexOf('here goes')).toBeGreaterThan(-1);
+    expect(whole.indexOf('here goes')).toBeLessThan(whole.indexOf('can you teach me?'));
+    expect(whole.split('can you teach me?')).toHaveLength(3); // once in the thread, once quoted
+  });
+
+  it('move turns show the opening nudge first, then open hits and the fired set', async () => {
+    __setBattleshipTestHooks({ provider, sleep: async () => {}, random: () => 0 });
+    shots = ['A2', 'C9'];
+    await startBattle({ playerStarts: false });
+    await waitFor(() => state().turn === 'player' && !state().aiThinking);
+    const first = lastUserText(calls[calls.length - 1]);
+    expect(first).toContain('This is your first shot of the game. Pick a cell somewhere in the top left');
+    expect(first).not.toContain('Your open hits');
+    await playerMove(CHAR, 9, 9);
+    await waitFor(() => state().turn === 'player' && !state().aiThinking);
+    const second = lastUserText(calls[calls.length - 1]);
+    expect(second).not.toContain('first shot of the game');
+    expect(second).toContain('Your open hits, on ships not sunk yet: A2 (next to it, not fired yet: B2, A1, A3).');
+    expect(second).toContain('Cells you already fired at (never again): A2.');
+    expect(state().aiShots).toBe(2); // C9 was its own call, nothing chosen for it
   });
 });

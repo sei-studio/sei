@@ -70,6 +70,8 @@ import {
   runWithAttempts,
   alreadyMovedResult,
   SAY_PROPERTY,
+  chatReplyRule,
+  unansweredNote,
   type BoardToolUse,
   type BoardTurnArgs,
   type BoardTurnKind,
@@ -96,6 +98,7 @@ const sessions = new Map<string, Session>();
 let deps: BATTLESHIPDeps | null = null;
 let providerOverride: BoardTurnArgs['provider'];
 let sleepOverride: ((ms: number) => Promise<void>) | undefined;
+let randomOverride: (() => number) | undefined;
 
 export interface BATTLESHIPDeps {
   pushState: (state: BATTLESHIPGameState) => void;
@@ -153,7 +156,12 @@ interface Session {
   clock: string;
   gameLog: Array<{ ts: number; text: string }>;
   queue: Queue | null;
-  chatBuffer: Array<{ voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
+  /** Player lines waiting for ONE coalesced reply (id + text: the reply quotes them). */
+  chatBuffer: Array<{ id: string; text: string; voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
+  /** Per-game variety nudge for the placement turn (placementLean). */
+  placeLean: string;
+  /** Per-game opening-region nudge for the first shot (openingLean). */
+  openingLean: string;
   firstMoveSent: boolean;
   stats: {
     llmMoves: number;
@@ -282,6 +290,7 @@ export async function startBATTLESHIP(
   if (existing) dropSession(existing);
 
   const playerStarts = opts?.playerStarts ?? true;
+  const rand = randomOverride ?? Math.random;
   const s: Session = {
     gameId: randomUUID(),
     characterId,
@@ -315,6 +324,8 @@ export async function startBATTLESHIP(
     gameLog: [],
     queue: null,
     chatBuffer: [],
+    placeLean: placementLean(rand),
+    openingLean: openingLean(rand),
     firstMoveSent: false,
     stats: { llmMoves: 0, retries: 0, illegal: 0, failedTurns: 0, retryClicks: 0, chatReplies: 0 },
   };
@@ -468,7 +479,7 @@ export async function handlePlayerChat(args: {
   s.lastActivityAt = Date.now();
   s.spoke = true;
   return await new Promise<ChatSendResult>((resolve) => {
-    s.chatBuffer.push({ voiceCall: args.voiceCall === true, resolve });
+    s.chatBuffer.push({ id: userMsg.id, text: args.text, voiceCall: args.voiceCall === true, resolve });
     if (!s.queue) {
       flushChatBuffer(s);
       return;
@@ -653,10 +664,10 @@ async function onPlaceTool(s: Session, tu: BoardToolUse, live: () => boolean): P
   s.appliedToken = s.moveToken; // live() held: this is the turn's token
   // aiFleet turns 'ready' (and the battle may open) only once the runner
   // returns: changing it here made the turn's own stale check fire.
-  s.gameLog.push({
-    ts: Date.now(),
-    text: `(game) You placed your fleet: ${parsed.map((p) => `${p.name} ${describePlacement(p)}`).join('; ')}.`,
-  });
+  // No cells here: the log rides every turn's thread, chat replies included,
+  // and Haiku 5.5 read its own positions out to the player from it ("the
+  // battleship's around C5 to C8", 261128 eval). Move turns show its board.
+  s.gameLog.push({ ts: Date.now(), text: '(game) You placed your fleet.' });
   capture('battleship_fleet_placed', {
     character_id: s.characterId,
     by: 'ai',
@@ -728,12 +739,6 @@ function parseFleetInput(input: unknown): BATTLESHIPPlacement[] | string {
   return out;
 }
 
-function describePlacement(p: BATTLESHIPPlacement): string {
-  const cells = placementCells(p);
-  const last = cells[cells.length - 1];
-  return `${battleshipCellName(p.row, p.col)} to ${battleshipCellName(last.row, last.col)}`;
-}
-
 async function dispatchChat(s: Session): Promise<void> {
   const entries = s.chatBuffer.splice(0);
   if (entries.length === 0) return;
@@ -746,8 +751,9 @@ async function dispatchChat(s: Session): Promise<void> {
       characterId: s.characterId,
       kind: 'chat-reply',
       contract: await contractBlock(s),
-      turnBlock: turnBlock(s, 'chat-reply', null),
+      turnBlock: turnBlock(s, 'chat-reply', null, entries.map((e) => e.text)),
       gameLog: s.gameLog,
+      unansweredIds: entries.map((e) => e.id),
       clock: s.clock,
       tools: BATTLESHIP_TOOLS,
       voiceCall,
@@ -1040,8 +1046,7 @@ async function contractBlock(_s: Session): Promise<string> {
       'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
       'talk through your analysis. Do not open with "ok", "okay" or "alright", and do not repeat a line you already ' +
       'said this game.',
-    'When they talk to you, or when the game is over, there is no move to make and your plain text is said out ' +
-      'loud, exactly as written. One short line, or nothing.',
+    chatReplyRule(),
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
       'The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
@@ -1072,12 +1077,184 @@ function shipsLine(grid: BATTLESHIPGrid): string {
   return `afloat: ${afloat.join(', ') || 'none'}; sunk: ${sunk.join(', ') || 'none'}`;
 }
 
-function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): string {
+/** Cell names of a grid in row order, picked by state. */
+function cellsWhere(grid: BATTLESHIPGrid, pick: (c: BATTLESHIPGrid['cells'][number][number]) => boolean): string[] {
+  const out: string[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) if (pick(grid.cells[r][c])) out.push(battleshipCellName(r, c));
+  }
+  return out;
+}
+
+const fired = (c: string): boolean => c === 'hit' || c === 'miss' || c === 'sunk';
+
+/**
+ * Move turns: the hits on their board whose ship is not sunk yet, each with
+ * the cells next to it it has not fired at. Shown, never chosen: the shot is
+ * still the model's own fire() call. Haiku 5.5 lost track of open hits late
+ * in a game (261128 eval).
+ */
+export function openHitsText(grid: BATTLESHIPGrid): string {
+  const parts: string[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid.cells[r][c] !== 'hit') continue;
+      const next = [
+        [r - 1, c],
+        [r + 1, c],
+        [r, c - 1],
+        [r, c + 1],
+      ]
+        .filter(([nr, nc]) => nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !fired(grid.cells[nr][nc]))
+        .map(([nr, nc]) => battleshipCellName(nr, nc));
+      parts.push(`${battleshipCellName(r, c)} (next to it, not fired yet: ${next.join(', ') || 'none'})`);
+    }
+  }
+  return parts.length
+    ? `Your open hits, on ships not sunk yet: ${parts.join('; ')}.`
+    : 'Your open hits: none (no ship you hit is still afloat).';
+}
+
+/**
+ * Move turns: where it may not shoot again, as a list (the shorter side:
+ * the cells fired at, or past half the board the cells still open). Haiku
+ * 5.5 re-fired old cells up to 48 times a game reading the grid alone.
+ */
+export function firedCellsText(grid: BATTLESHIPGrid): string {
+  const done = cellsWhere(grid, fired);
+  if (done.length === 0) return '';
+  if (done.length <= (ROWS * COLS) / 2) {
+    return `Cells you already fired at (never again): ${done.join(', ')}.`;
+  }
+  const open = cellsWhere(grid, (c) => !fired(c));
+  return `You fired at ${done.length} cells. The only cells you have not fired at: ${open.join(', ')}.`;
+}
+
+function shotText(h: BATTLESHIPShotRecord, whose: 'your' | 'their'): string {
+  const name = battleshipCellName(h.row, h.col);
+  return h.sunkShip ? `${name} sank ${whose} ${h.sunkShip}` : `${name} ${h.hit ? 'hit' : 'miss'}`;
+}
+
+/** How many shots back each side the chat facts line shows. */
+const FACT_SHOTS = 2;
+
+/**
+ * Chat-reply turns: the board as checked facts, from the character's side.
+ * With two grids alone Haiku 5.5 mixed up whose board was whose ("that's a
+ * miss on my side, you still have no sunk ship" right after the player sank
+ * its battleship, 261128 eval).
+ */
+export function chatFactsText(f: {
+  theirShips: ReadonlyArray<BATTLESHIPShip>;
+  yourShips: ReadonlyArray<BATTLESHIPShip>;
+  history: ReadonlyArray<BATTLESHIPShotRecord>;
+  turn: 'player' | 'ai';
+}): string {
+  const sunkList = (ships: ReadonlyArray<BATTLESHIPShip>): string => {
+    const sunk = ships.filter((sh) => sh.sunk).map((sh) => sh.name);
+    return `${sunk.length} of ${ships.length || 5}${sunk.length ? ` (${sunk.join(', ')})` : ''}`;
+  };
+  const last = (by: 'ai' | 'player', whose: 'your' | 'their'): string => {
+    const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
+    return shots.length ? shots.map((h) => shotText(h, whose)).join(', ') : 'none yet';
+  };
+  return [
+    'Facts the app checked. Anything you say about the game has to match these:',
+    `You sank ${sunkList(f.theirShips)} of their ships. They sank ${sunkList(f.yourShips)} of yours.`,
+    `Your last shots at their ships, newest first: ${last('ai', 'their')}.`,
+    `Their last shots at your ships, newest first: ${last('player', 'your')}.`,
+    `Next shot: ${f.turn === 'ai' ? 'yours' : 'theirs'}.`,
+  ].join(' ');
+}
+
+interface Region {
+  label: string;
+  rows: [number, number];
+  cols: [number, number];
+}
+
+function regionLabel(where: string, rows: [number, number], cols: [number, number]): string {
+  const L = (r: number): string => String.fromCharCode(65 + r);
+  return `the ${where} (rows ${L(rows[0])} to ${L(rows[1])}, columns ${cols[0] + 1} to ${cols[1] + 1})`;
+}
+
+const PLACE_REGIONS: Region[] = [
+  { label: regionLabel('top left', [0, 4], [0, 4]), rows: [0, 4], cols: [0, 4] },
+  { label: regionLabel('top right', [0, 4], [5, 9]), rows: [0, 4], cols: [5, 9] },
+  { label: regionLabel('bottom left', [5, 9], [0, 4]), rows: [5, 9], cols: [0, 4] },
+  { label: regionLabel('bottom right', [5, 9], [5, 9]), rows: [5, 9], cols: [5, 9] },
+  { label: regionLabel('middle', [2, 7], [2, 7]), rows: [2, 7], cols: [2, 7] },
+  { label: 'the whole board, spread out', rows: [0, 9], cols: [0, 9] },
+];
+
+/** The 3x3 blocks of their board an opening shot is nudged toward. */
+const OPENING_REGIONS: Region[] = (() => {
+  const bands: Array<[number, number]> = [
+    [0, 2],
+    [3, 6],
+    [7, 9],
+  ];
+  const rowWords = ['top', 'middle', 'bottom'];
+  const colWords = ['left', 'middle', 'right'];
+  const out: Region[] = [];
+  bands.forEach((rows, ri) =>
+    bands.forEach((cols, ci) => {
+      const where = ri === 1 && ci === 1 ? 'center' : `${rowWords[ri]} ${colWords[ci]}`;
+      out.push({ label: regionLabel(where, rows, cols), rows, cols });
+    }),
+  );
+  return out;
+})();
+
+function pickIndex(n: number, rand: () => number): number {
+  return Math.min(n - 1, Math.max(0, Math.floor(rand() * n)));
+}
+
+/**
+ * Placement turns: a per-game random region to lean toward plus a few random
+ * cells in it, in random order. The character still places every ship
+ * itself; this only breaks the habit of the same layout every game (carrier
+ * at A1 going right in 32 of 32 eval games).
+ */
+export function placementLean(rand: () => number = Math.random): string {
+  const reg = PLACE_REGIONS[pickIndex(PLACE_REGIONS.length, rand)];
+  const pool: string[] = [];
+  for (let r = reg.rows[0]; r <= reg.rows[1]; r++) {
+    for (let c = reg.cols[0]; c <= reg.cols[1]; c++) pool.push(battleshipCellName(r, c));
+  }
+  const ideas: string[] = [];
+  for (let i = 0; i < 3 && pool.length; i++) ideas.push(pool.splice(pickIndex(pool.length, rand), 1)[0]);
+  return (
+    `So they cannot guess your layout, this game lean toward ${reg.label}, and mix ships running right and down. ` +
+    `A few cells you could start a ship from: ${ideas.join(', ')}.`
+  );
+}
+
+/**
+ * The first shot of a game: a per-game random region of their board (E5 was
+ * the first shot in 30 of 30 eval games). The cell is still its own pick.
+ */
+export function openingLean(rand: () => number = Math.random): string {
+  const reg = OPENING_REGIONS[pickIndex(OPENING_REGIONS.length, rand)];
+  return `This is your first shot of the game. Pick a cell somewhere in ${reg.label} of their board.`;
+}
+
+function turnBlock(
+  s: Session,
+  kind: BoardTurnKind,
+  retryNote: string | null,
+  /** Chat-reply turns: the player's unanswered line(s), quoted at the end. */
+  playerLines: ReadonlyArray<string> = [],
+): string {
   const lines: string[] = [];
+  // Its own ship cells ("S") only where it needs them. On a chat reply the
+  // board shows only their shots on it: Haiku 5.5 told the player where its
+  // ships were despite the rule (261128 eval).
+  const showOwnShips = kind !== 'chat-reply' && kind !== 'game-over';
   if (s.status === 'preparing') {
     if (s.aiFleet === 'ready') {
       lines.push('Your fleet is placed. They are still placing theirs; the battle starts when they are done.');
-      lines.push(`Your board:\n${gridText(s.aiGrid, true)}`);
+      if (showOwnShips) lines.push(`Your board:\n${gridText(s.aiGrid, true)}`);
     } else {
       lines.push('The battle has not started. Each side is placing its ships.');
     }
@@ -1089,10 +1266,14 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     lines.push(gridText(s.playerGrid, false));
     const theirShips = s.playerGrid.ships.filter((sh) => sh.sunk).map((sh) => sh.name);
     lines.push(`Their ships you sank: ${theirShips.join(', ') || 'none yet'}.`);
-    lines.push(`Your own board ("S" your ship, "o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`);
-    lines.push(gridText(s.aiGrid, true));
+    lines.push(
+      showOwnShips
+        ? `Your own board ("S" your ship, "o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`
+        : `Your own board, where they shoot ("o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`,
+    );
+    lines.push(gridText(s.aiGrid, showOwnShips));
     const lastTheirs = [...s.history].reverse().find((h) => h.by === 'player');
-    if (lastTheirs) {
+    if (lastTheirs && kind !== 'chat-reply') {
       const what = lastTheirs.sunkShip ? `hit and sank your ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit' : 'miss';
       lines.push(`Their last shot: ${battleshipCellName(lastTheirs.row, lastTheirs.col)}, ${what}.`);
     }
@@ -1103,9 +1284,16 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
       'Place your fleet now: call place_fleet() with all five ships, each with its start cell and "right" or "down". ' +
         'Choose the spots yourself; they stay hidden from them.',
     );
+    lines.push(s.placeLean);
     if (retryNote) lines.push(retryNote);
   } else if (kind === 'move') {
     lines.push('It is YOUR shot.');
+    if (s.aiShots === 0) lines.push(s.openingLean);
+    else {
+      lines.push(openHitsText(s.playerGrid));
+      const done = firedCellsText(s.playerGrid);
+      if (done) lines.push(done);
+    }
     if (retryNote) lines.push(retryNote);
     if (s.recentLines.length) {
       lines.push(`Your recent lines: ${s.recentLines.map((l) => `"${l}"`).join(' / ')}. Do not say these again or anything close to them.`);
@@ -1115,15 +1303,20 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     }
     lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {
-    lines.push(
-      s.aiTurnFailed
-        ? `They just said something. Your last try to ${s.status === 'preparing' ? 'place your fleet' : 'shoot'} did ` +
-            'not work, so nothing more happens until they press Try again. Answer them in text, or say nothing. If ' +
-            'they ask, say it failed and they can press Try again.'
-        : aiTurnKind(s)
-          ? 'They just said something. Your own turn comes on its own right after this reply. Answer them in text, or say nothing.'
-          : 'They just said something. Answer them in text, or say nothing.',
-    );
+    if (s.status === 'active') {
+      lines.push(
+        chatFactsText({ theirShips: s.playerGrid.ships, yourShips: s.aiGrid.ships, history: s.history, turn: s.turn }),
+      );
+    }
+    if (s.aiTurnFailed) {
+      lines.push(
+        `Your last try to ${s.status === 'preparing' ? 'place your fleet' : 'shoot'} did not work, so nothing more ` +
+          'happens until they press Try again. If they ask, say it failed and they can press Try again.',
+      );
+    } else if (aiTurnKind(s)) {
+      lines.push('Your own turn comes on its own right after this reply.');
+    }
+    lines.push(`${unansweredNote(playerLines)} Answer them in text, or say nothing.`);
   }
   return lines.join('\n');
 }
@@ -1185,9 +1378,12 @@ export async function shutdownBATTLESHIP(): Promise<void> {
 export function __setBattleshipTestHooks(h: {
   provider?: BoardTurnArgs['provider'];
   sleep?: (ms: number) => Promise<void>;
+  /** The per-game nudges' randomness (placementLean, openingLean). */
+  random?: () => number;
 }): void {
   providerOverride = h.provider;
   sleepOverride = h.sleep;
+  randomOverride = h.random;
 }
 
 /** Test-only: drop every session without analytics. */

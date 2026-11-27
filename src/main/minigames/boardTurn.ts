@@ -98,6 +98,11 @@ export interface BoardTurnArgs {
   turnBlock: string;
   /** Append-only move record, merged into the thread by timestamp. */
   gameLog: ReadonlyArray<{ ts: number; text: string }>;
+  /**
+   * Chat-reply turns: ids of the player's messages this reply answers. They
+   * are moved to the end of the thread (see buildGameThread).
+   */
+  unansweredIds?: ReadonlyArray<string>;
   /** Clock pinned at game start (chatPrompts.clockNow) so the prefix stays stable. */
   clock: string;
   /** The game's fixed tool array. Must not change between turns of a game. */
@@ -185,17 +190,68 @@ export async function readMemoryTail(id: string): Promise<string> {
   }
 }
 
-/** Transcript rows + the game's move log, in time order (chess buildGameThread). */
+/**
+ * Transcript rows + the game's move log, in time order (chess buildGameThread).
+ *
+ * `unansweredIds` (chat-reply turns): the player's messages this reply is for
+ * go last, after the move log and her own move line. In time order a line
+ * typed while her move was running sat BEFORE that move and the line she said
+ * with it, so Haiku 5.5 read it as already answered ("Ren hasn't said anything
+ * yet", 4 of 4 in the 261128 eval).
+ */
 export function buildGameThread(
   history: ChatMessage[],
   gameLog: ReadonlyArray<{ ts: number; text: string }>,
+  unansweredIds: ReadonlyArray<string> = [],
 ): ChatMessage[] {
-  if (gameLog.length === 0) return history;
   const rows: ChatMessage[] = [
     ...history,
     ...gameLog.map((g, i) => ({ id: `game-${g.ts}-${i}`, role: 'user' as const, text: g.text, ts: g.ts })),
-  ];
-  return rows.sort((a, b) => a.ts - b.ts);
+  ].sort((a, b) => a.ts - b.ts);
+  if (unansweredIds.length === 0) return rows;
+  const pending = new Set(unansweredIds);
+  return [...rows.filter((m) => !pending.has(m.id)), ...rows.filter((m) => pending.has(m.id))];
+}
+
+/** Longest quoted player line in a chat-reply turn block. */
+const QUOTE_MAX = 280;
+/** Most player lines quoted in one chat-reply turn block (the latest ones). */
+const QUOTE_LINES = 3;
+
+/**
+ * The chat-reply turn's opening: the player's unanswered line(s), quoted.
+ * "They just said something" alone left the model to find the line in the
+ * thread, and it often found its own move talk instead. Starts with
+ * "They just said" (the eval harness keys chat-reply turns on it).
+ */
+export function unansweredNote(texts: ReadonlyArray<string>): string {
+  const quoted = texts
+    .map((t) => t.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(-QUOTE_LINES)
+    .map((t) => `"${truncate(t, QUOTE_MAX)}"`);
+  if (quoted.length === 0) return 'They just said something.';
+  return (
+    `They just said to you: ${quoted.join(', then ')}. You have not answered ${quoted.length > 1 ? 'these' : 'this'} ` +
+    'yet. Talk to them as "you", not about them.'
+  );
+}
+
+/**
+ * PENDING a founder decision (T565): let chat replies run two or three short
+ * lines when the player asks how to play or for help. false = the current
+ * "one short line, or nothing" everywhere. Flip to true to try it.
+ */
+export const LONGER_HELP_REPLIES = false;
+
+/** The contract's chat-reply sentence, shared by Four in a Row and Fleet Battle. */
+export function chatReplyRule(longerHelp: boolean = LONGER_HELP_REPLIES): string {
+  const base =
+    'When they talk to you, or when the game is over, there is no move to make and your plain text is said out ' +
+    'loud, exactly as written. One short line, or nothing.';
+  return longerHelp
+    ? `${base} When they ask how to play, or ask for help or the rules, you can use two or three short lines to explain.`
+    : base;
 }
 
 /**
@@ -247,7 +303,7 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
     pinnedClock: a.clock,
   } as Parameters<typeof buildSystemBlocks>[0]);
 
-  const messages: LlmMessage[] = toMessages(buildGameThread(history, a.gameLog));
+  const messages: LlmMessage[] = toMessages(buildGameThread(history, a.gameLog, a.unansweredIds));
   const endsOnUser = messages.length > 0 && messages[messages.length - 1].role === 'user';
   markLastMessageCached(endsOnUser ? messages.slice(0, -1) : messages);
   foldUserNote(messages, a.turnBlock);
