@@ -18,6 +18,8 @@
  * decrypts); HARNESS_SESSION_MS adds a fixed delay to it, a stand-in for a
  * slower provider build (keychain decrypt, an antivirus-scanned disk, a busy
  * main loop, the ChatGPT plan's model lookup). No network beyond 127.0.0.1, no vendor calls, no cost.
+ * A second case (261127, T563) times the call GREETING the same way
+ * (sendVoiceGreetingTurn, not streamed), the main-side share of the connect.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
@@ -62,14 +64,15 @@ import { VOICES } from 'soulcaster';
 import { _setUserDataOverride, paths } from '../paths';
 import { drainScopedWrites } from '../profile/scopeBarrier';
 import { setCallActive } from '../voice/callState';
-import { sendChatMessage, type ChatDeps } from './chatService';
+import { sendChatMessage, sendVoiceGreetingTurn, type ChatDeps } from './chatService';
 import { voiceTtsStream } from '../voice/tts';
 
 const CHAR = '66666666-6666-4666-8666-666666666666';
 const REPLY = ['Hey, good to hear you again.', ' So what are we building today?', ' I was thinking about that castle.'];
 
-/** Server-side arrival times (Date.now) of the last request per route. */
-const arrivals: { llm: number; tts: number } = { llm: 0, tts: 0 };
+/** Server-side arrival times (Date.now) of the last request per route.
+ * `anyLlm` also counts non-streamed requests (the call greeting). */
+const arrivals: { llm: number; anyLlm: number; tts: number } = { llm: 0, anyLlm: 0, tts: 0 };
 
 function sse(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -83,6 +86,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { stream?: boolean };
   if (req.url?.startsWith('/v1/messages')) {
     if (body.stream) arrivals.llm = at;
+    arrivals.anyLlm = at;
     await sleep(LLM_TTFT_MS);
     const usage = { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
     if (!body.stream) {
@@ -240,6 +244,40 @@ describe.skipIf(!ENABLED)('voice reply latency harness', () => {
         row('TTS call -> TTS request at proxy', ttsPrep),
         row('TTS response -> first chunk (minus TTFB)', ttsChunk),
         row('(sequential total to first audio bytes)', firstAudioBytes),
+      ].join('\n'),
+    );
+    expect(prep.every((x) => x >= 0)).toBe(true);
+  }, 120_000);
+
+  // 261127 (T563): the call greeting runs while the phone rings, and the call
+  // connects only once its first line is back (or the 5s cap). This is the
+  // client's share of voice_call_ended connect_greet_request_ms /
+  // connect_greet_ready_ms: everything except the model's own time.
+  it('measures the client-side share of a call greeting', async () => {
+    const prep: number[] = [];
+    const stampLag: number[] = [];
+    const after: number[] = [];
+    const total: number[] = [];
+    for (let run = 0; run < RUNS + 2; run++) {
+      const timing: { llmStartAt?: number } = {};
+      const t0 = Date.now();
+      const replies = await sendVoiceGreetingTurn(CHAR, [], { plan: null, timing });
+      const done = Date.now();
+      expect(replies.length).toBeGreaterThan(0);
+      if (run < 2) continue; // warm-up
+      prep.push(arrivals.anyLlm - t0);
+      stampLag.push(arrivals.anyLlm - (timing.llmStartAt ?? arrivals.anyLlm));
+      after.push(done - arrivals.anyLlm - LLM_TTFT_MS);
+      total.push(done - t0);
+    }
+    const row = (name: string, xs: number[]) => `${name.padEnd(44)} p50 ${String(median(xs)).padStart(5)}ms  p90 ${String(p90(xs)).padStart(5)}ms`;
+    console.log(
+      [
+        `[harness] greeting, ${RUNS} runs, LLM response after ${LLM_TTFT_MS}ms (not streamed)`,
+        row('greet -> LLM request at proxy (client prep)', prep),
+        row('llmStartAt stamp -> request at proxy', stampLag),
+        row('LLM response -> replies back (persist)', after),
+        row('greet -> replies back (total)', total),
       ].join('\n'),
     );
     expect(prep.every((x) => x >= 0)).toBe(true);

@@ -1241,6 +1241,21 @@ describe('single-shot voice turns keep their note after the cache breakpoint (26
     expect(tail).toMatch(/\[now: \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}\]/);
     expect(tail).not.toContain('System note, not the player speaking: the current');
   });
+
+  // 261127 (T563): voice_call_ended's connect_greet_request_ms reads this.
+  it('stamps when the greeting LLM request goes out', async () => {
+    await seed([['user', 'bye for now'], ['companion', 'later.']]);
+    let sentAt = 0;
+    createSpy.mockImplementationOnce(async () => {
+      sentAt = Date.now();
+      return { content: [{ type: 'text', text: 'oh hey.' }] };
+    });
+    const timing: { llmStartAt?: number } = {};
+    const before = Date.now();
+    await sendVoiceGreetingTurn(CHAR, [], { plan: null, timing });
+    expect(timing.llmStartAt).toBeGreaterThanOrEqual(before);
+    expect(timing.llmStartAt).toBeLessThanOrEqual(sentAt);
+  });
 });
 
 // 261112: a voice line that cut the companion off mid-line reaches the live

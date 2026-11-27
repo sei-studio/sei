@@ -43,6 +43,7 @@ import type { UsageSummary } from './llmUsage';
 import type { PopupAction } from './popupActions';
 import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason, CaptureFailDetail } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
+import type { CallConnectTiming } from './callConnect';
 import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -2938,6 +2939,9 @@ export interface RendererApi {
     /** Hang-up only (261030): this companion's interrupt counts for
      *  voice_call_ended (shared/callInterrupts.ts). */
     interrupts?: CallInterruptCounts;
+    /** Hang-up only (261127): the dialed companion's connect timing for
+     *  voice_call_ended (shared/callConnect.ts). */
+    connect?: CallConnectTiming;
   }): Promise<void>;
   /**
    * The call pipeline just went LIVE — ask the companion to speak first (like

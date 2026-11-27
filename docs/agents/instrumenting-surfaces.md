@@ -479,6 +479,37 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
 No model call and no tokens are added; dev launches send nothing (the
 initAnalytics channel gate).
 
+**Call connect timing on `voice_call_ended` (261127, O5 speed, T563).**
+reply_latency starts at the first utterance, so nothing timed the dial. The
+dialed companion's `voice_call_ended` now carries, as integer ms from the
+Call press (`startCall`'s dialStart), each absent when the call never got
+there: `connect_mic_permission_ms`, `connect_setup_reads_ms` (config,
+ElevenLabs key status, speech pack status), `connect_mic_open_ms`
+(getUserMedia; the ring starts here), `connect_stt_ready_ms` (local model
+when the policy boots one, plus the capture graph), `connect_greet_request_ms`
+(main's wall-clock stamp of the greeting's LLM request, app greetings only,
+via `SpokenLineContext.replyTiming` on the first greeting line),
+`connect_greet_ready_ms` (the dialed companion's first line reached the
+renderer before the player spoke), **`connect_ms`** (live: stopwatch,
+connected chime), `connect_opener_queued_ms` (opener handed to TTS) and
+**`first_line_ms`** (first audible clip, only if the player had not spoken and
+no idle nudge had gone out, so it is the opener). Enums: `connect_gate`
+(`ring|setup|greeting|greeting_timeout`: what the connect waited on last),
+`connect_greet_path` (`app|in_game`), `connect_stt_local` (`none|eager`).
+Renderer clock `lib/voice/connectClock.ts`, props and the main-side
+field-by-field sanitizer in `shared/callConnect.ts` (a bad field is dropped
+alone, never fails the hang-up report that posts the call row). Same rule as
+the interrupt counts: only the renderer's hang-up report carries them, so a
+call main closed (quit, account switch) and a group joiner have none, and a
+dial abandoned before connect sends no `voice_call_ended` at all. The DevTools
+console prints one `[sei/voice] call_connect ...` line when the opener is
+heard. Fixed waits to read the numbers against: the ring floor
+(`MIN_RING_MS`, 1300) and the pickup beat (`CONNECT_SPEAK_DELAY_MS`, 1000)
+before the opener's TTS request, and the greeting cap (5000). Wiring is pinned
+by `useVoiceStore.connectTiming.test.ts` (real startCall, stubbed mic/audio,
+fake clocks); the greeting's client share by the second case of
+`voiceLatency.harness.test.ts` (p50 8 ms to the LLM request, 4 ms after it).
+
 **Every event carries `ui_language` (260801).** `commonProps()` in
 `src/main/analytics.ts` stamps the APP UI language (not the per-character
 `chat_language`) on every event and `$set`s it on the person. Before this the

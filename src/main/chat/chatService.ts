@@ -1816,7 +1816,9 @@ async function sendVoiceGreetingTurnImpl(
   peers: string[] = [],
   // 261014: the saved plan still open for this greeting (index.ts reads it
   // with readPendingPlan before marking it used). null = none.
-  opts: { plan?: string | null } = {},
+  // 261127 (T563): `timing.llmStartAt` is stamped (wall clock) when the
+  // greeting's LLM request goes out, for voice_call_ended's connect phases.
+  opts: { plan?: string | null; timing?: { llmStartAt?: number } } = {},
 ): Promise<ChatMessage[]> {
   inflight.get(characterId)?.abort();
   const ctrl = new AbortController();
@@ -1849,6 +1851,7 @@ async function sendVoiceGreetingTurnImpl(
     markLastMessageCached(messages);
     appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
     const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
+    if (opts.timing) opts.timing.llmStartAt = Date.now();
     const first = await llm.call({
       maxTokens: replyMaxTokens(tools),
       system,
