@@ -576,6 +576,7 @@ describe('Fleet Battle prompt facts', () => {
   it('chat facts say who sank what and the last shots from its own side', () => {
     const ship = (name: BATTLESHIPShip['name'], sunk: boolean): BATTLESHIPShip => ({ name, size: 2, cells: [], sunk });
     const text = chatFactsText({
+      player: 'Ren',
       theirShips: [ship('carrier', false), ship('destroyer', true)],
       yourShips: [ship('battleship', true), ship('cruiser', false)],
       history: [
@@ -587,10 +588,15 @@ describe('Fleet Battle prompt facts', () => {
       ],
       turn: 'ai',
     });
-    expect(text).toContain('You sank 1 of 2 (destroyer) of their ships. They sank 1 of 2 (battleship) of yours.');
-    expect(text).toContain('Your last shots at their ships, newest first: B3 sank their destroyer, B2 hit.');
-    expect(text).toContain('Their last shots at your ships, newest first: F5 sank your battleship, E5 hit.');
+    expect(text).toContain("Your ships Ren has sunk: 1 (battleship). Ren's ships you have sunk: 1 (destroyer).");
+    expect(text).toContain("Ren's last shots, on your board, newest first: F5 (sank your battleship), E5 (hit).");
+    expect(text).toContain("Your last shots, on Ren's board, newest first: B3 (sank Ren's destroyer), B2 (hit).");
     expect(text).toContain('Next shot: yours.');
+    expect(text).toContain('"you" is Ren and "my" is yours');
+    const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player' });
+    expect(none).toContain("Your ships Ren has sunk: none. Ren's ships you have sunk: none.");
+    expect(none).toContain("Ren's last shots, on your board, newest first: none yet.");
+    expect(none).toContain("Next shot: Ren's.");
   });
 
   it('the per-game nudges vary game to game and follow the injected randomness', () => {
@@ -629,8 +635,8 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(rows).toHaveLength(20);
     expect(rows.join('')).not.toMatch(/S/);
     expect(block).toContain('Facts the app checked');
-    expect(block).toContain('You sank 0 of 5 of their ships. They sank 0 of 5 of yours.');
-    expect(block).toContain('Next shot: theirs.');
+    expect(block).toContain("Your ships Player has sunk: none. Player's ships you have sunk: none.");
+    expect(block).toContain("Next shot: Player's.");
     expect(block).toContain('They just said to you: \\"where are your ships?\\"');
   });
 
