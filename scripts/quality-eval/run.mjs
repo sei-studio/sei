@@ -176,6 +176,10 @@ export async function runSession(sc, sessDir, opts = {}) {
 
   // Things the player can see: chat, system/death messages.
   const heard = []   // for the brain
+  // The companion can speak (a greet on join) while setup still awaits, before
+  // the brain-loop state below exists. Until then her line is only recorded;
+  // the player brain still reads it from `heard` on its first turn.
+  let loopReady = false
   pbot.on('chat', (username, message) => {
     if (username === PLAYER) return
     rec({ kind: 'heard', from: username, text: message })
@@ -277,8 +281,10 @@ export async function runSession(sc, sessDir, opts = {}) {
   let lastPlayerSayAt = 0
   let lastHeardIdx = 0
   const end = t0 + minutes * 60000
+  loopReady = true
 
   function onCompanionLine() {
+    if (!loopReady) return
     if (debounce) clearTimeout(debounce)
     debounce = setTimeout(() => { debounce = null; trigger({ type: 'companion_spoke' }) }, 3500)
   }

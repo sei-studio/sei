@@ -257,7 +257,7 @@ export const ACTION_DESCRIPTIONS = {
     'Stop trailing; hold position until the next movement.',
 
   attackEntity:
-    'Swing at an entity `times` (1-10) in one call; a combat reflex auto-pursues a moving target, so one call usually suffices. The best weapon you own is equipped automatically. A hostile asked for by name is the one nearest the player when any are near them, and after a kill the swings left go to the next hostile near the player, so use a high `times` (8-10) when protecting them.',
+    'Swing at an entity `times` (1-10) in one call; a combat reflex auto-pursues a moving target, so one call usually suffices. The best weapon you own is equipped automatically. A hostile asked for by name is the one nearest the player when any are near them, and after a kill the swings left go to the next hostile near the player, so use a high `times` (8-10) when protecting them. When you are within 12 blocks of the player as it starts, the fight stays near them: a mob that backs off is followed only a few blocks past where it started (and at least 12 blocks from the player, 16 for a skeleton), then you go back to their side and fight it there when it comes back.',
 
   setPvp:
     'Toggle PvP spar mode: `{enabled:true}` when the player asks to spar/fight/duel/PvP you, `{enabled:false}` when they ask to stop. While ON you may attackEntity the player and hit back when they hit you; while OFF (the default) you never attack or retaliate against the player. If they named a weapon for the duel ("stick fight", "fists only"), equip exactly that item first — a stick fight means holding a stick, not a sword. Turn it OFF the moment they call it off.',
@@ -560,7 +560,20 @@ export const staleAttackerAddendum = (label, who, died) =>
 // `{stuck}` nudge by Looking mode; the wording lives here so it is tunable.
 export const IDLE_STUCK_NUDGE_VISION = `call look(around) once, then explore() a different direction ({orientation:"forward|backwards|left|right"})`
 export const IDLE_STUCK_NUDGE_NOVISION = `explore() a different direction ({orientation:"forward|backwards|left|right"})`
-export const IDLE_TICK_TEXT = `\n\nIDLE TICK. {quiet} with no new events. First look back at the conversation: if the player asked you for something that is not finished yet (going back to them or handing it over is part of it), its next step comes before your own goal and before the snapshot's \`next:\` line, so do that step now, and record it with setGoal (for_player true) if your heartbeat does not have it. Otherwise act according to your PROACTIVENESS rule in the system prompt (where your persona describes your initiative or how much you talk, it wins), and lean toward involving the player rather than soloing: passive only observes or comments; reactive does light chores (gather wood, food, or cobble); agentic does NOT quietly grind the next milestone solo. Instead turn the snapshot's \`next:\` line into one short invitation in your own voice (what you are about to do plus a part they could take), not an open-ended "what should we do" that you then go do alone. If you already made that offer and they have not taken it up, do not ask again or remind them of it. A quiet tick is ALSO the natural opening for the other half of your job: one real question about the PLAYER, or a follow-up to something they told you earlier that you never came back to. That counts as a full, correct use of this tick and is often the better line. If you are genuinely blocked (no iron in sight, a missing tool, stuck pathing), don't silently retry or pivot away — ask the player in character and make the block an invite. If AI teammates share your project, a quiet tick is also your coordination beat: hand out the next part when a step finished, report a milestone of your own, or check on a teammate you have not heard from in a while by name; do not re-ping a teammate you asked something just a tick or two ago and who has not had time to answer. Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If your last line was a question, greeting, offer, or check-in that the player has NOT answered yet, do not restate it and do not reword it into a fresh sentence; asking the same THING three different ways ("what's up" → "what's the question" → "i'm listening") reads as spam. That is a ban on repeating YOURSELF, not a vow of silence: something genuinely new — a different question, a reaction to what just happened, an invitation to the next step — is welcome even seconds later. Likewise, if you are already standing where you meant to be (the player, or a spot you already reached), do NOT re-issue goTo to it — hold position. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, not calling say() is fine — but check first whether there is something about THEM you have been meaning to ask, because there usually is.`
+// 261127 (pass 66): a stay she promised or was asked for holds on a quiet
+// tick. In 7 of 8 combat_night stay-then-leave incidents (11-25/11-26) she
+// had told the scared player she was staying ("not budging", "staying in
+// the box till morning") and the next idle tick pitched the `next:` line and
+// started a gather or dig 13-24 blocks off, often in the same say() ("i'm
+// staying right by you. i'll grab some wood close by"). The heartbeat and
+// agentic rules already put the player first but release it "once they are
+// okay", which she read as a won fight or a thank-you. pass66-probe: leaves
+// 10/24 -> 0/24, told-to-go control works 7/8 both arms.
+// The teammate sentence rides only when AI teammates are here
+// (IDLE_TEAM_TEXT, data.teammates from the orchestrator), which pays for
+// the new sentence on solo play.
+export const IDLE_TEAM_TEXT = ' If AI teammates share your project, a quiet tick is also your coordination beat: hand out the next part when a step finished, report a milestone of your own, or check on a teammate you have not heard from in a while by name; do not re-ping a teammate you asked something just a tick or two ago and who has not had time to answer.'
+export const IDLE_TICK_TEXT = `\n\nIDLE TICK. {quiet} with no new events. First look back at the conversation: if the player asked you for something that is not finished yet (going back to them or handing it over is part of it), its next step comes before your own goal and before the snapshot's \`next:\` line, so do that step now, and record it with setGoal (for_player true) if your heartbeat does not have it. If they asked you to stay close or you told them you would stay with them, do only what you can do right next to them, and do not start a gather, dig or walk that takes you away. That ends as soon as they tell you to go, or when it is day with no mobs near them. Otherwise act according to your PROACTIVENESS rule in the system prompt (where your persona describes your initiative or how much you talk, it wins), and lean toward involving the player rather than soloing: passive only observes or comments; reactive does light chores (gather wood, food, or cobble); agentic does NOT quietly grind the next milestone solo. Instead turn the snapshot's \`next:\` line into one short invitation in your own voice (what you are about to do plus a part they could take), not an open-ended "what should we do" that you then go do alone. If you already made that offer and they have not taken it up, do not ask again or remind them of it. A quiet tick is ALSO the natural opening for the other half of your job: one real question about the PLAYER, or a follow-up to something they told you earlier that you never came back to. That counts as a full, correct use of this tick and is often the better line. If you are genuinely blocked (no iron in sight, a missing tool, stuck pathing), don't silently retry or pivot away — ask the player in character and make the block an invite.{team} Do not narrate the snapshot, your inventory, the player's position, or distances (no openers like "fresh start" or "looks like"); your plan belongs in setGoal and your tool calls, not in say(). If your last line was a question, greeting, offer, or check-in that the player has NOT answered yet, do not restate it and do not reword it into a fresh sentence; asking the same THING three different ways ("what's up" → "what's the question" → "i'm listening") reads as spam. That is a ban on repeating YOURSELF, not a vow of silence: something genuinely new — a different question, a reaction to what just happened, an invitation to the next step — is welcome even seconds later. Likewise, if you are already standing where you meant to be (the player, or a spot you already reached), do NOT re-issue goTo to it — hold position. If you have been moving toward a place and your position has not changed since the last tick, the path is not working: {stuck}. On a quiet tick with nothing real to add, not calling say() is fine — but check first whether there is something about THEM you have been meaning to ask, because there usually is.`
 
 export const EVENT_GUIDANCE = {
   'sei:loop_end':
@@ -580,7 +593,9 @@ export const EVENT_GUIDANCE = {
     // With Looking off there is no look() tool, so the stuck-path nudge must not
     // tell the bot to call it. Prose lives in the editable constants above.
     const stuckNudge = visionMode === 'off' ? IDLE_STUCK_NUDGE_NOVISION : IDLE_STUCK_NUDGE_VISION
-    return fillTemplate(IDLE_TICK_TEXT, { quiet: quietPhrase, stuck: stuckNudge })
+    // A caller that does not say (teammates undefined) keeps the sentence.
+    const team = data?.teammates === false ? '' : IDLE_TEAM_TEXT
+    return fillTemplate(IDLE_TICK_TEXT, { quiet: quietPhrase, stuck: stuckNudge, team })
   },
 
   'sei:attacked': ATTACKED_ADDENDUM,
@@ -1366,8 +1381,16 @@ export const NUDGES = {
 
   // 261115 (pass 56): appended to the result of a fight that replaced her
   // long action (see attackMidAction busy). Past tense: it stays in history.
-  fightCutAction: (action) =>
-    `This fight cut short your ${action || 'action'} before it was done. Unless something else needs you first, call it again now to finish it.`,
+  // 261125 (pass 64b): `own` = work she started on her own (a greeting or
+  // idle turn, not one answering the player). There the "call it again now"
+  // was the order of the moment, and it beat the player-first line in her
+  // goals: right after a fight at night she said "finishing the wood run, i'll
+  // stay near alex" and walked off to gather while the scared player was
+  // asking her to stay close (11-24 pass 63 compare 01-A, 02-B, 03-B). Her
+  // goals and the idle tick still bring her back to it.
+  fightCutAction: (action, { own = false } = {}) => own
+    ? `This fight cut short your ${action || 'action'} before it was done.`
+    : `This fight cut short your ${action || 'action'} before it was done. Unless something else needs you first, call it again now to finish it.`,
 
   // 261011: appended to an attack turn when the bot already spoke about the
   // fight moments ago. Quality eval 2026-10-11: every throttled hit forced a

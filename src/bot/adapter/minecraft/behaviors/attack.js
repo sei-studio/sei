@@ -68,9 +68,12 @@ function inStaggerWindow(bot) {
  * `deadline` is an epoch ms, or a function returning one (read every poll, so
  * a running attack that is extended mid-chase keeps chasing).
  *
- * Returns 'reached' | 'gone' | 'timeout' | 'aborted'.
+ * `outside` (optional) is the guard check (see guardFor): when it says the
+ * mob has left the area around the player, the chase returns 'out'.
+ *
+ * Returns 'reached' | 'gone' | 'timeout' | 'aborted' | 'out'.
  */
-async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
+async function pursueUntilInReach(bot, entityId, reach, deadline, signal, outside = null) {
   let goalOwned = false
   let ourGoal = null
   while (true) {
@@ -80,6 +83,7 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
     if (!live || !live.position) return 'gone'
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist <= reach) return 'reached'
+    if (outside && outside(live)) return 'out'
     // Yield the goal to a creeper-flee (Plan 01 mutex), a survival takeover
     // (drowning swim-up / critical-HP retreat — survival.js re-asserts its flee
     // goal on any foreign goal_updated, so fighting it would just waste the
@@ -276,6 +280,7 @@ export async function attackEntityAction(args, bot, config) {
     // fresh time window (extendAttackRun) instead of aborting and restarting.
     const ctx = {
       bot, signal, timeoutMs, startHp, deadIds, ownerMode, tagged: new Set([entity.id]), tags: 0,
+      guard: guardFor(bot, args, ownerMode), holding: false,
       budget: times, used: 0, fightStartedAt: actionStartedAt,
       hardDeadline: actionStartedAt + timeoutMs * MAX_ACTION_WINDOWS,
       currentId,
@@ -297,6 +302,8 @@ export async function attackEntityAction(args, bot, config) {
         ownerRadius: CHAIN_OWNER_RADIUS, excludeIds: deadIds,
       }) ?? nearestTagged(bot, ctx)
       if (!next || next.id === currentId) break
+      // Guarding the player: the chain only goes on to a mob by them.
+      if (ctx.guard && !nearPlayer(bot, next)) break
       currentId = next.id
       ctx.currentId = next.id
       ctx.tagged.add(next.id)
@@ -461,6 +468,8 @@ export function attackRunState(bot) {
     targetId: alive ? ctx.currentId : null,
     kills,
     next,
+    // Waiting by the player for this mob to come in (guard, see guardFor).
+    holding: alive && ctx.holding ? { name: live.name ?? 'mob', zone: guardZone(bot, live) } : null,
   }
 }
 
@@ -483,6 +492,10 @@ const aMob = (label) => `${/^[aeiou]/i.test(String(label)) ? 'an' : 'a'} ${label
 export function attackInFlightSuffix(state, bot, ownerLabel) {
   if (!state) return ''
   let text = state.kills > 0 ? `, ${state.kills} killed so far.` : ''
+  if (state.holding && ownerLabel) {
+    const lead = `back by ${ownerLabel}, waiting for the ${state.holding.name} to come within ${state.holding.zone} blocks of them again, then it fights it there.`
+    text += text ? ` ${lead[0].toUpperCase()}${lead.slice(1)}` : `, ${lead}`
+  }
   const nx = state.next
   if (nx?.position && ownerLabel) {
     let d = null
@@ -529,6 +542,128 @@ function sameFight(bot, live, args) {
 // After a kill, attackEntity moves on to a hostile within this many blocks of
 // the player (the owner-threat watch radius, combat.js).
 const CHAIN_OWNER_RADIUS = 12
+
+// 261126 (quality pass 64c): a fight she starts by the player stays by them.
+// combat_night free play: she told the scared player "i'm right here" or
+// "i'm not going far, promise", then the attack chased a skeleton or spider
+// that kept backing off until she was 23-28 blocks from them (11-25 pass 64b
+// compare 03-A, 11-24 pass 63 01-A/02-A), or went on after a kill to a mob
+// she had tagged far out. The judge's top off class was this
+// say-then-do-opposite. A hard stop on the chase (pass 64b leash) read as
+// giving up: the fight ended with the mob alive and coming back, and she
+// called it again at once. Here the fight keeps going and only the place
+// changes: when the mob gets farther from the player than its guard zone,
+// she goes back to their side and waits there, and fights it when it comes
+// back in (a skeleton comes back to shoot, a zombie walks to them).
+//
+// The zone is set the first time a fight goes for that mob: GUARD_RADIUS
+// from the player (16 for a mob that shoots), or a few blocks past where the
+// mob stood then, up to GUARD_MAX. So a mob she was sent out to is still
+// reached; it just cannot pull her farther out than that, and calling the
+// attack again on it keeps the same zone. On for owner defense (a hostile,
+// player known) when she is within GUARD_RADIUS of the player as the attack
+// starts. An entity_id (internal callers) is unguarded.
+const GUARD_RADIUS = CHAIN_OWNER_RADIUS
+// A skeleton shoots from about 15 blocks, so it is a threat that far out.
+const GUARD_RADIUS_RANGED = 16
+const GUARD_SLACK = 4
+const GUARD_MAX = 24
+const GUARD_ZONE_TTL_MS = 60000
+const RANGED_HOSTILES = new Set(['skeleton', 'stray', 'bogged', 'pillager', 'witch'])
+const HOLD_FOLLOW_RANGE = 2
+
+export function guardRadiusFor(name) {
+  return RANGED_HOSTILES.has(name) ? GUARD_RADIUS_RANGED : GUARD_RADIUS
+}
+
+function ownerDistance(bot, pos) {
+  const owner = ownerEntityOf(bot)
+  if (!owner?.position || !pos) return null
+  try {
+    const d = pos.distanceTo(owner.position)
+    return Number.isFinite(d) ? d : null
+  } catch { return null }
+}
+
+function guardFor(bot, args, ownerMode) {
+  if (!ownerMode) return false
+  if (args?.entity_id != null) return false
+  const d = ownerDistance(bot, bot.entity?.position)
+  return d != null && d <= GUARD_RADIUS
+}
+
+/** This mob's guard zone (blocks from the player), set the first time a fight goes for it. */
+function guardZone(bot, live) {
+  const now = Date.now()
+  const zones = bot._seiGuardZones instanceof Map ? bot._seiGuardZones : (bot._seiGuardZones = new Map())
+  for (const [id, z] of zones) if (now - z.at > GUARD_ZONE_TTL_MS) zones.delete(id)
+  const had = zones.get(live?.id)
+  if (had) return had.zone
+  const d = ownerDistance(bot, live?.position)
+  const base = guardRadiusFor(live?.name)
+  const zone = d == null ? base : Math.min(GUARD_MAX, Math.max(base, Math.ceil(d) + GUARD_SLACK))
+  if (live?.id != null) zones.set(live.id, { zone, at: now })
+  return zone
+}
+
+/** The mob is farther from the player than its guard zone. False when the player is not in view. */
+function outsideGuard(bot, live) {
+  const d = ownerDistance(bot, live?.position)
+  return d != null && d > guardZone(bot, live)
+}
+
+/** The mob is within the plain guard radius of the player (a chain target after a kill). */
+function nearPlayer(bot, e) {
+  const d = ownerDistance(bot, e?.position)
+  return d == null || d <= guardRadiusFor(e?.name)
+}
+
+/**
+ * Stay at the player's side while the mob is out past the guarded area.
+ * Returns 'in' once it is inside it (or in her reach, or the player is out
+ * of view), else 'gone' | 'timeout' | 'aborted'. Same goal-ownership rules as
+ * pursueUntilInReach.
+ */
+async function holdByOwner(bot, entityId, deadline, signal) {
+  let ourGoal = null
+  while (true) {
+    if (signal?.aborted) return 'aborted'
+    if (Date.now() > deadline()) return 'timeout'
+    const live = bot.entities?.[entityId]
+    if (!live || !live.position) return 'gone'
+    const dist = bot.entity?.position?.distanceTo?.(live.position)
+    if (typeof dist === 'number' && dist <= REACH) return 'in'
+    if (!outsideGuard(bot, live)) return 'in'
+    const owner = ownerEntityOf(bot)
+    if (!owner) return 'in'
+    if (bot._seiReflexActive || bot._seiSurvivalActive || bot._seiCriticalRetreat || inStaggerWindow(bot)) {
+      ourGoal = null
+      await sleep(PURSUE_POLL_MS)
+      continue
+    }
+    if (!ourGoal || bot.pathfinder?.goal !== ourGoal) {
+      try {
+        ourGoal = new goals.GoalFollow(owner, HOLD_FOLLOW_RANGE)
+        bot.pathfinder.setGoal(ourGoal, true)
+      } catch (_) {}
+    }
+    // Face the mob while standing by them (not while walking: the
+    // pathfinder steers by yaw).
+    try {
+      const dOwner = bot.entity.position.distanceTo(owner.position)
+      if (dOwner <= HOLD_FOLLOW_RANGE + 1) bot.lookAt?.(live.position.offset(0, live.height ? live.height * 0.5 : 0.5, 0), true)
+    } catch (_) {}
+    await sleep(PURSUE_POLL_MS)
+  }
+}
+
+function heldResult(bot, id, name, hits, of) {
+  const owner = ownerLabelOf(bot) ?? 'the player'
+  const d = ownerDistance(bot, bot.entities?.[id]?.position)
+  const where = d != null ? `${blocks(d)} from ${owner}` : `away from ${owner}`
+  if (hits) return `${hits}/${of} hits on ${name}, then it backed off to ${where}, so you went back to ${owner} and waited there instead of following it farther. It is still alive`
+  return `the ${name} stayed out at ${where}, so you waited by ${owner} instead of following it farther. It is still alive`
+}
 
 // 261012 (pass 4a): a mob only turns on whoever hits it, so while she fights
 // one, a second hostile walks on to the player. In the protect_player eval
@@ -606,6 +741,8 @@ async function fightOne(entity, ctx) {
   const entityId = entity.id
   const isPlayerTarget = entity.type === 'player' || entity.username != null
   ctx.fightStartedAt = Date.now()
+  // The guard zone is set from where this mob stands as the fight on it starts.
+  if (ctx.guard) guardZone(bot, entity)
   // Read live: extendAttackRun moves both the budget and the window.
   const deadline = () => Math.min(ctx.fightStartedAt + timeoutMs, ctx.hardDeadline)
   let hits = 0
@@ -653,12 +790,24 @@ async function fightOne(entity, ctx) {
 
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist > REACH) {
+      // Guarding the player (guardFor): a mob out past the area by them is
+      // not chased. She waits at their side until it comes in.
+      if (ctx.guard && outsideGuard(bot, live)) {
+        ctx.holding = true
+        const held = await holdByOwner(bot, entityId, deadline, signal)
+        ctx.holding = false
+        if (held === 'aborted') return done(hits ? `aborted after ${hits}/${of()} hits on ${name}` : 'aborted')
+        if (held === 'gone') return done(goneResult(name, hits, died()))
+        if (held === 'timeout') return done(heldResult(bot, entityId, name, hits, of()))
+        continue
+      }
       // Chase the LIVE entity with a dynamic follow goal until in reach. The
       // overall timeout (deadline) is the ONLY give-up condition — no more
       // single-budget surrender on a kiting mob.
-      const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal)
+      const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal, ctx.guard ? (l) => outsideGuard(bot, l) : null)
       if (res === 'aborted') return done(hits ? `aborted after ${hits}/${of()} hits on ${name}` : 'aborted')
       if (res === 'gone') return done(goneResult(name, hits, died()))
+      if (res === 'out') continue
       if (res === 'timeout') {
         return done(hits
           ? `${hits}/${of()} hits, then ${name} kept its distance until time ran out`
@@ -682,9 +831,10 @@ async function fightOne(entity, ctx) {
         if (!live) return done(goneResult(name, hits, died()))
         const d2 = bot.entity?.position?.distanceTo?.(live.position)
         if (typeof d2 === 'number' && d2 > REACH) {
-          const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal)
+          const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal, ctx.guard ? (l) => outsideGuard(bot, l) : null)
           if (res === 'aborted') return done(`aborted after ${hits}/${of()} hits on ${name}`)
           if (res === 'gone') return done(goneResult(name, hits, died()))
+          if (res === 'out') continue
           if (res === 'timeout') return done(`${hits}/${of()} hits, then ${name} kept its distance until time ran out`)
           live = bot.entities?.[entityId]
           if (!live) return done(goneResult(name, hits, died()))

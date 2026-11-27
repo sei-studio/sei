@@ -246,4 +246,29 @@ describe('pass 56 fight that replaced a long action', () => {
     expect(kill).toBeTruthy()
     expect(kill).not.toContain('cut short')
   })
+
+  // 261125 (pass 64b): her own work (started on an idle or greeting turn,
+  // not answering the player) gets the fact without "call it again now".
+  it('a hit during gather she started on her own says it was cut short, without the order to go back', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      start('gather', { name: 'oak_log' }),
+      { text: '', toolUses: [{ id: 'k1', name: 'attackEntity', input: { entity: 'zombie' } }] },
+      { text: '', toolUses: [] },
+      { text: '', toolUses: [] },
+    ])
+    const orch = createOrchestrator({ adapter: makeFightAdapter(), config: config(), reenqueue: (e, d) => { if (e === 'sei:action_complete') queueMicrotask(() => orch.handleDispatch(e, d)) }, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:idle', { quietMs: 30000 })
+    await orch.handleDispatch('sei:attacked', { attackerLabel: 'zombie', attackerKind: 'hostile_mob' })
+    for (let i = 0; i < 10; i++) await flush()
+    const kill = toolResultTexts(provider.calls).find((t) => t.includes('killed zombie'))
+    expect(kill).toBeTruthy()
+    expect(kill).toContain('This fight cut short your gather oak_log before it was done.')
+    expect(kill).not.toContain('call it again now')
+  })
+
+  it('the gather the player asked for keeps the order to go back', async () => {
+    const kill = await orderDuring('gather', { name: 'oak_log' })
+    expect(kill).toContain('Unless something else needs you first, call it again now to finish it.')
+  })
 })
