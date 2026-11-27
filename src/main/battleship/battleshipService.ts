@@ -1130,9 +1130,9 @@ export function firedCellsText(grid: BATTLESHIPGrid): string {
   return `You fired at ${done.length} cells. The only cells you have not fired at: ${open.join(', ')}.`;
 }
 
-function shotText(h: BATTLESHIPShotRecord, whose: string): string {
-  const name = battleshipCellName(h.row, h.col);
-  return `${name} ${h.sunkShip ? `sank ${whose} ${h.sunkShip}` : h.hit ? 'hit' : 'miss'}`;
+function shotText(h: BATTLESHIPShotRecord, whose: string, withCell: boolean): string {
+  const what = h.sunkShip ? `sank ${whose} ${h.sunkShip}` : h.hit ? 'hit' : 'miss';
+  return withCell ? `${battleshipCellName(h.row, h.col)} ${what}` : what;
 }
 
 /** How many shots back each side the chat facts line shows. */
@@ -1163,21 +1163,22 @@ export function chatFactsText(f: {
     const names = ships.filter((sh) => sh.sunk).map((sh) => `${whose} ${sh.name}`);
     return names.length ? names.join(', ') : `none of ${whose} ships yet`;
   };
-  const last = (by: 'ai' | 'player', whose: string): string => {
+  const last = (by: 'ai' | 'player', whose: string, withCell: boolean): string => {
     const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
-    return shots.length ? shots.map((h) => shotText(h, whose)).join(', ') : 'none yet';
+    return shots.length ? shots.map((h) => shotText(h, whose, withCell)).join(', ') : 'none yet';
   };
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you). ` +
       'Anything you say about the game has to match them:',
     `- You sank: ${sunk(f.yourShips, 'my')}.`,
     `- I sank: ${sunk(f.theirShips, 'your')}.`,
-    `- Your last shots, at my board: ${last('player', 'my')}.`,
-    `- My last shots, at your board: ${last('ai', 'your')}.`,
+    `- Your last shots, at my board, newest first: ${last('player', 'my', true)}.`,
+    // No cells for its own shots: with them it kept tipping the player
+    // toward its own hits on the player's board (probes v2 to v7).
+    `- My last shots, at your board, newest first: ${last('ai', 'your', false)}.`,
     `- Your open hits on my board: ${f.theirOpenHits.join(', ') || 'none'}.`,
     `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
-    `A shooting tip for ${P} can only name a cell from "Your open hits on my board" (when that says none, there is no cell ` +
-      'to name), never one from "My last shots".',
+    `Only tip ${P} toward ${P}'s own open hits; with none, there is no cell to tip.`,
   ].join('\n');
 }
 

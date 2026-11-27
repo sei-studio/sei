@@ -592,14 +592,15 @@ describe('Fleet Battle prompt facts', () => {
     expect(text).toContain('("you" is Ren, "I" and "my" are you)');
     expect(text).toContain('- You sank: my battleship.');
     expect(text).toContain('- I sank: your destroyer.');
-    expect(text).toContain('- Your last shots, at my board: F5 sank my battleship, E5 hit.');
-    expect(text).toContain('- My last shots, at your board: B3 sank your destroyer, B2 hit.');
+    expect(text).toContain('- Your last shots, at my board, newest first: F5 sank my battleship, E5 hit.');
+    expect(text).toContain('- My last shots, at your board, newest first: sank your destroyer, hit.');
+    expect(text).not.toMatch(/B2|B3/); // its own shot cells are left out
     expect(text).toContain('- Your open hits on my board: E5.');
     expect(text).toContain('- Next shot: mine.');
     const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
     expect(none).toContain('- You sank: none of my ships yet.');
     expect(none).toContain('- I sank: none of your ships yet.');
-    expect(none).toContain('- Your last shots, at my board: none yet.');
+    expect(none).toContain('- Your last shots, at my board, newest first: none yet.');
     expect(none).toContain('- Your open hits on my board: none.');
     expect(none).toContain('- Next shot: yours.');
   });
@@ -654,8 +655,8 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     await handlePlayerChat({ characterId: CHAR, text: 'where next?' });
     const block = lastUserText(calls[0]);
     expect(block).toContain('- Your open hits on my board: A1.');
-    expect(block).toContain('- Your last shots, at my board: A1 hit.');
-    expect(block).toContain('- My last shots, at your board: J10 miss.');
+    expect(block).toContain('- Your last shots, at my board, newest first: A1 hit.');
+    expect(block).toContain('- My last shots, at your board, newest first: miss.');
   });
 
   it('a line sent while its shot runs is quoted and placed after the shot and the line it said', async () => {
