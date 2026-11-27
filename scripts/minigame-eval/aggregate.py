@@ -76,3 +76,24 @@ for ch, rs in rows.items():
         ms([r['turnMsAvg'] / 1000 for r in c4 if r['turnMsAvg']], '{:.1f}'),
         ms([r['llm']['cost'] for r in c4], '{:.4f}'),
     ))
+
+# Fleet Battle setup variety (T565): where the carrier starts and the first shot.
+bs_all = [r for rs in rows.values() for r in rs if r['game'] == 'bs']
+if bs_all:
+    from collections import Counter
+
+    def cell(row, col):
+        return 'ABCDEFGHIJ'[row] + str(col + 1)
+
+    anchors = Counter()
+    firsts = Counter()
+    for r in bs_all:
+        car = next((p for p in (r.get('aiFleet') or []) if p['name'] == 'carrier'), None)
+        if car:
+            anchors[cell(car['row'], car['col']) + (' right' if car['horizontal'] else ' down')] += 1
+        first = next((h for h in (r.get('history') or []) if h['by'] == 'ai'), None)
+        if first:
+            firsts[cell(first['row'], first['col'])] += 1
+    print(f'\n### Fleet Battle setup variety ({sub}, {len(bs_all)} games)\n')
+    print('Carrier anchors: ' + ', '.join(f'{k} x{v}' for k, v in anchors.most_common()))
+    print('\nFirst shots: ' + ', '.join(f'{k} x{v}' for k, v in firsts.most_common()))

@@ -99,7 +99,7 @@ function lastUserText(p: LlmCallParams): string {
 function turnKindOf(p: LlmCallParams): string {
   const t = lastUserText(p);
   if (/The game is over\./.test(t)) return 'game-over';
-  if (/They just said something/.test(t)) return 'chat-reply';
+  if (/They just said/.test(t)) return 'chat-reply';
   if (/Place your fleet now|place_fleet\(\) with all five/.test(t)) return 'place';
   if (/It is YOUR (shot|move)/.test(t)) return 'move';
   // A follow-up hop of a turn (tool_result / nudge): same kind as before.
