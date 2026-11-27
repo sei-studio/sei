@@ -404,7 +404,7 @@ describe('Four in a Row turns', () => {
   it('chat during the game gets a reply that sees the board, and play() there does nothing', async () => {
     reply = (p) => {
       const last = JSON.stringify(p.messages[p.messages.length - 1]);
-      if (last.includes('They just said something')) {
+      if (last.includes('They just said to you') && last.includes('watch this')) {
         return { content: [text('Nice try.'), toolUse('play', { column: 1 })] };
       }
       return { content: [toolUse('play', { column: 5 })] };
@@ -467,5 +467,46 @@ describe('Four in a Row turns', () => {
     expect(row.text).toContain('Four in a Row');
     expect((row.event as { game: string }).game).toBe('Four in a Row');
     expect(foldSpy).toHaveBeenCalledWith(CHAR, 'PERSONA');
+  });
+});
+
+describe('Four in a Row chat replies after the 261128 eval', () => {
+  const lastUser = (p: LlmCallParams): string => JSON.stringify(p.messages[p.messages.length - 1]);
+
+  it('a line sent while its move runs is quoted, goes after the move, and gets the whose-turn fact', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    reply = async (p) => {
+      if (lastUser(p).includes('They just said to you')) return { content: [text('sure, watch the middle')] };
+      await gate;
+      return { content: [toolUse('play', { column: 4, say: 'center or nothing' })] };
+    };
+    await startCONNECT4(CHAR, { playerColor: 'y' });
+    await waitFor(() => calls.length >= 1); // its opening move is in flight
+    const chat = handlePlayerChat({ characterId: CHAR, text: 'can you teach me as we go?' });
+    await new Promise((r) => setTimeout(r, 20));
+    release();
+    const res = await chat;
+    expect(res?.replies.map((m) => m.text)).toEqual(['sure, watch the middle']);
+    const chatCall = calls.find((c) => lastUser(c).includes('They just said to you'))!;
+    const whole = JSON.stringify(chatCall.messages);
+    const at = whole.indexOf('can you teach me as we go?');
+    expect(whole.indexOf('you dropped a red piece in column 4')).toBeLessThan(at);
+    expect(whole.indexOf('center or nothing')).toBeLessThan(at);
+    const block = lastUser(chatCall);
+    expect(block).toContain('Whose turn: theirs. You do not move until they do.');
+    expect(block).toContain('They just said to you: \\"can you teach me as we go?\\". You have not answered this yet.');
+    expect(JSON.stringify(chatCall.system)).toContain('never say which column you will play next');
+  });
+
+  it('on its own (failed) turn the chat reply gets the whose-turn fact', async () => {
+    reply = () => ({ content: [text('thinking...')] });
+    await startCONNECT4(CHAR, { playerColor: 'r' });
+    await playerMove(CHAR, 0);
+    await waitFor(() => state().aiTurnFailed);
+    calls = [];
+    reply = () => ({ content: [text('ugh')] });
+    await handlePlayerChat({ characterId: CHAR, text: 'your go' });
+    expect(lastUser(calls[0])).toContain('Whose turn: yours, but your last try to move did not work');
   });
 });

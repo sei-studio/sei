@@ -15,8 +15,13 @@ import {
   BoardTurnTimeout,
   MOVE_ATTEMPTS,
   RETRY_BACKOFF_MS,
+  buildGameThread,
+  unansweredNote,
+  chatReplyRule,
+  LONGER_HELP_REPLIES,
   type BoardTurnResult,
 } from './boardTurn';
+import type { ChatMessage } from '../../shared/ipc';
 
 const noMove = (over: Partial<BoardTurnResult> = {}): BoardTurnResult => ({
   moved: false,
@@ -132,5 +137,45 @@ describe('replayableContent', () => {
     expect(replayableContent([{ type: 'text', text: ' ' } as never, tool as never])).toEqual([tool]);
     const said = { type: 'text', text: 'hmm' };
     expect(replayableContent([said as never])).toEqual([said]);
+  });
+});
+
+describe('chat-reply thread and quoting (261128 eval: chat sent during her move read as answered)', () => {
+  const player: ChatMessage = { id: 'p1', role: 'user', text: 'can you teach me?', ts: 100 };
+  const said: ChatMessage = { id: 'c1', role: 'companion', text: 'center or nothing', ts: 300 };
+  const log = [{ ts: 200, text: '(game) Move 1: you dropped a red piece in column 4.' }];
+
+  it('keeps time order without unanswered ids', () => {
+    expect(buildGameThread([player, said], log).map((m) => m.text)).toEqual([
+      'can you teach me?',
+      log[0].text,
+      'center or nothing',
+    ]);
+    expect(buildGameThread([player], []).map((m) => m.id)).toEqual(['p1']);
+  });
+
+  it('moves the unanswered player lines after the move log and her own move line', () => {
+    const later: ChatMessage = { id: 'p2', role: 'user', text: 'hello?', ts: 150 };
+    const thread = buildGameThread([player, later, said], log, ['p1', 'p2']);
+    expect(thread.map((m) => m.id)).toEqual(['game-200-0', 'c1', 'p1', 'p2']);
+  });
+
+  it('quotes the unanswered line(s) and asks to talk to them, not about them', () => {
+    const one = unansweredNote(['  can you   teach me?  ']);
+    expect(one).toMatch(/^They just said to you: "can you teach me\?"\. You have not answered this yet\./);
+    expect(one).toContain('Talk to them as "you", not about them.');
+    const many = unansweredNote(['a', 'b', 'c', 'd']);
+    expect(many).toContain('"b", then "c", then "d"');
+    expect(many).not.toContain('"a"');
+    expect(many).toContain('answered these yet');
+    expect(unansweredNote(['x'.repeat(400)])).toContain(`"${'x'.repeat(280)}..."`);
+    expect(unansweredNote([])).toBe('They just said something.');
+  });
+
+  it('the longer help replies stay off by default; the flip adds one sentence', () => {
+    expect(LONGER_HELP_REPLIES).toBe(false);
+    expect(chatReplyRule()).toBe(chatReplyRule(false));
+    expect(chatReplyRule(false)).toMatch(/One short line, or nothing\.$/);
+    expect(chatReplyRule(true)).toMatch(/^When they talk to you.*One short line, or nothing\. When they ask how to play, or ask for help or the rules, you can use two or three short lines to explain\.$/);
   });
 });

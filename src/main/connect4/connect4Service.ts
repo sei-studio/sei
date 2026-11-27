@@ -57,6 +57,8 @@ import {
   runWithAttempts,
   alreadyMovedResult,
   SAY_PROPERTY,
+  chatReplyRule,
+  unansweredNote,
   type BoardToolUse,
   type BoardTurnKind,
   type BoardTurnArgs,
@@ -140,7 +142,8 @@ interface Session {
   /** Append-only move record the character reads, merged into the thread. */
   gameLog: Array<{ ts: number; text: string }>;
   queue: Queue | null;
-  chatBuffer: Array<{ voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
+  /** Player lines waiting for ONE coalesced reply (id + text: the reply quotes them). */
+  chatBuffer: Array<{ id: string; text: string; voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
   firstMoveSent: boolean;
   stats: {
     llmMoves: number;
@@ -398,7 +401,7 @@ export async function handlePlayerChat(args: {
   s.lastActivityAt = Date.now();
   s.spoke = true;
   return await new Promise<ChatSendResult>((resolve) => {
-    s.chatBuffer.push({ voiceCall: args.voiceCall === true, resolve });
+    s.chatBuffer.push({ id: userMsg.id, text: args.text, voiceCall: args.voiceCall === true, resolve });
     if (!s.queue) {
       flushChatBuffer(s);
       return;
@@ -584,8 +587,9 @@ async function dispatchChat(s: Session): Promise<void> {
       characterId: s.characterId,
       kind: 'chat-reply',
       contract: await contractBlock(s),
-      turnBlock: turnBlock(s, 'chat-reply', null),
+      turnBlock: turnBlock(s, 'chat-reply', null, entries.map((e) => e.text)),
       gameLog: s.gameLog,
+      unansweredIds: entries.map((e) => e.id),
       clock: s.clock,
       tools: CONNECT4_TOOLS,
       voiceCall,
@@ -912,8 +916,8 @@ async function contractBlock(s: Session): Promise<string> {
       'a text message. Most moves deserve none, so leave say out unless you have something to say. Never say which ' +
       'column you are playing or talk through your analysis: the board shows your move by itself. Do not open with ' +
       '"ok", "okay" or "alright", and do not repeat a line you already said this game.',
-    'When they talk to you, or when the game is over, there is no move to make and your plain text is said out ' +
-      'loud, exactly as written. One short line, or nothing.',
+    chatReplyRule(),
+    'When you talk to them between moves, the same goes: never say which column you will play next.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
       'The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
@@ -940,7 +944,13 @@ function columnsText(s: Session): string {
   }).join('; ');
 }
 
-function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): string {
+function turnBlock(
+  s: Session,
+  kind: BoardTurnKind,
+  retryNote: string | null,
+  /** Chat-reply turns: the player's unanswered line(s), quoted at the end. */
+  playerLines: ReadonlyArray<string> = [],
+): string {
   const ai = aiColorOf(s);
   const lines: string[] = [];
   lines.push(
@@ -969,15 +979,17 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     }
     lines.push('Work it out in plain text if you need to, then call play() with your column, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {
+    // Whose turn, as a fact: Haiku 5.5 said "my move: i'm stacking up column
+    // 4" while it was the player's move (261128 eval).
     lines.push(
       s.turn === ai && s.aiTurnFailed
-        ? 'They just said something. It is your move, but your last try to move did not work, so no move is coming ' +
-            'until they press Try again. Answer them in text, or say nothing. If they ask, say your move failed and ' +
-            'they can press Try again.'
+        ? 'Whose turn: yours, but your last try to move did not work, so no move is coming until they press Try ' +
+            'again. If they ask, say your move failed and they can press Try again.'
         : s.turn === ai
-          ? 'They just said something. Your move comes in its own turn right after this reply. Answer them in text, or say nothing.'
-          : 'They just said something. It is their move. Answer them in text, or say nothing.',
+          ? 'Whose turn: yours. You move in your own turn right after this reply, so do not say which column.'
+          : 'Whose turn: theirs. You do not move until they do.',
     );
+    lines.push(`${unansweredNote(playerLines)} Answer them in text, or say nothing.`);
   } else if (kind === 'game-over' && s.result) {
     const r = s.result;
     const how =
