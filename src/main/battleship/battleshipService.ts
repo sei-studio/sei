@@ -1146,8 +1146,11 @@ const FACT_SHOTS = 2;
  * its battleship, 261128 eval). Probes of the wording, 6-8 replies each to
  * "did i sink one of yours or did you sink one of mine?": "you sank their /
  * they sank yours" was wrong 4/4 (it flipped the pronouns when talking to
- * the player); the same from its side with the player named left 2/6 to
- * 5/8 replies pointing the player at its own hits or flipping a sink.
+ * the player); from its side with the player named, or in this speaking
+ * frame with its own shot cells listed, 2/6 to 6/8 replies tipped the
+ * player toward its OWN hits or flipped a sink. This version (its shots as
+ * hit/miss/sank only, the player's open hits named) was clean in 5/8 and
+ * never cited one of its own cells (eval branch, probe-bs-facts.eval.ts).
  */
 export function chatFactsText(f: {
   player: string;
