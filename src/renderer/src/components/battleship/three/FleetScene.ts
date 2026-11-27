@@ -39,6 +39,7 @@ import { makeWoodTexture } from '../../chess/three/woodTexture';
 import { TabletopStage, easeOut, easeOutBack, endFraming, smooth } from '../../tabletop/TabletopStage';
 import { roundedRect } from '../../connect4/three/Connect4Scene';
 import { OpenSea, SEA_LEVEL, openSeaEnvironment } from './openSea';
+import { FoamRings } from './foamRing';
 import { DECK_Y, ENEMY_PALETTE, PLAYER_PALETTE, ShipLibrary } from './shipGeometry';
 import { ROW_LETTERS, type GridPos } from '../fleetUtil';
 
@@ -124,6 +125,8 @@ interface ShipEntry {
   tilt: THREE.Group; // roll / pitch / sink offset
   deck: THREE.Group; // pegs and flames riding the deck
   slick: THREE.Mesh | null;
+  /** Foam ring on the water around the floating hull (hidden once sunk). */
+  foam: THREE.Mesh;
   sunk: boolean;
   sinkStart: number; // -1 = not sinking; Infinity = settled
   dropStart: number; // -1 = at rest
@@ -163,6 +166,7 @@ export class FleetScene {
   private readonly stage: TabletopStage;
   private readonly ships: ShipLibrary;
   private readonly sea: OpenSea;
+  private readonly foam: FoamRings;
 
   private readonly enemyTray = new THREE.Group();
   private readonly dock = new THREE.Group();
@@ -230,6 +234,7 @@ export class FleetScene {
     const own = this.stage.own.bind(this.stage);
     const scene = this.stage.scene;
     this.ships = new ShipLibrary();
+    this.foam = new FoamRings(this.stage);
 
     // ── The sea, and the two areas marked on it ──
     this.sea = new OpenSea(this.stage, [
@@ -250,6 +255,9 @@ export class FleetScene {
       ship.position.set(DOCK_LEFT + size / 2, WATER_Y + DRAFT, DOCK_ROW_Z[i]);
       ship.castShadow = true;
       ship.receiveShadow = true;
+      const foam = this.hullFoam(ship.geometry);
+      foam.position.y = 0.006 - DRAFT;
+      ship.add(foam);
       this.dock.add(ship);
       this.dockShips.set(name, ship);
     }
@@ -523,7 +531,9 @@ export class FleetScene {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     tilt.add(mesh, deck);
-    outer.add(tilt);
+    const foam = this.hullFoam(mesh.geometry);
+    foam.position.y = WATER_Y + 0.006 - (WATER_Y + DRAFT);
+    outer.add(tilt, foam);
     this.poseOnBoard(outer, board, placement);
     this.shipRoot.add(outer);
     const ent: ShipEntry = {
@@ -535,6 +545,7 @@ export class FleetScene {
       tilt,
       deck,
       slick: null,
+      foam,
       sunk: false,
       sinkStart: -1,
       dropStart: -1,
@@ -544,7 +555,17 @@ export class FleetScene {
     return ent;
   }
 
+  /** A foam ring sized to a hull's waterline footprint (X = length, Z = beam). */
+  private hullFoam(geo: THREE.BufferGeometry): THREE.Mesh {
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const box = geo.boundingBox ?? new THREE.Box3(new THREE.Vector3(-1, 0, -0.3), new THREE.Vector3(1, 0, 0.3));
+    const len = Math.round((box.max.x - box.min.x + 0.18) * 20) / 20;
+    const beam = Math.round((box.max.z - box.min.z + 0.18) * 20) / 20;
+    return this.foam.ring(len, beam);
+  }
+
   private updateSlick(ent: ShipEntry): void {
+    ent.foam.visible = !ent.sunk;
     if (ent.sunk && !ent.slick) {
       const size = SHIP_SIZES[ent.placement.name];
       let geo = this.slickGeos.get(size);
@@ -1080,7 +1101,9 @@ export class FleetScene {
       const body = new THREE.Mesh(m.buoyGeo, m.buoyMat);
       const band = new THREE.Mesh(m.bandGeo, m.bandMat);
       body.castShadow = true;
-      b.add(body, band);
+      const foam = this.foam.ring(0.7, 0.7);
+      foam.position.y = 0.006;
+      b.add(body, band, foam);
       parent.add(b);
     }
 

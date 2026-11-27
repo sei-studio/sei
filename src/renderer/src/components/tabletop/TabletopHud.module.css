@@ -65,12 +65,17 @@
 }
 
 .openSea {
-  /* The water video's mean color, shown until its first frame. Ink is a step
-     stronger here, since moving caustics sit behind every label. */
-  --scene-room: #2b9fcb;
-  --scene-ink-soft: rgba(20, 29, 44, 0.84);
-  --scene-ink-faint: rgba(20, 29, 44, 0.78);
-  --scene-text-shadow: 0 0 6px rgba(255, 255, 255, 0.95), 0 0 2px rgba(255, 255, 255, 0.9);
+  /* The water video's mean color, shown until its first frame. The sea is
+     deep blue, so labels use the dark-scene cream ink. */
+  --scene-room: #256c9c;
+}
+
+/* The placement hint is small mono text over moving water: brighter ink and a
+   wider shadow so it reads on the darker sea. */
+.openSea .subTag {
+  font-size: 11px;
+  color: var(--scene-ink-turn);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.55);
 }
 
 .stage {

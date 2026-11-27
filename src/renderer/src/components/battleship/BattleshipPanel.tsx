@@ -122,7 +122,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   const result = game?.status === 'ended' && game.result ? resultCopy(game.result, name, t) : null;
 
   return (
-    <div className={`${hud.panel} ${hud.brightScene} ${hud.openSea}`} aria-label={t('Fleet Battle with {name}', { name })}>
+    <div className={`${hud.panel} ${hud.openSea}`} aria-label={t('Fleet Battle with {name}', { name })}>
       <div className={hud.stage}>
         <div className={hud.boardFill}>
           <SceneBoundary key={characterId} onFail={() => setSceneFailed(true)}>

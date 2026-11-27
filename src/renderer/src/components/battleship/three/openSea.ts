@@ -1,6 +1,6 @@
 /**
- * The water Fleet Battle is played on, seen from above: bright, calm sea
- * with a gentle swell, sunlight caustics and a few glints. The two 10x10
+ * The water Fleet Battle is played on, seen from above: a deep blue open
+ * sea with wind-blown ripples and a slow swell. The two 10x10
  * grids are areas marked on the water (a lighter lagoon tint and crisp cell
  * lines, drawn here; FleetScene adds the rope-and-float borders and the
  * floating coordinate markers).
@@ -31,8 +31,8 @@ import seaLoopUrl from './sea-loop.mp4';
 
 export const SEA_LEVEL = 0.33;
 /** Mean color of the water video (the page shows it until the first frame). */
-export const SEA_COLOR = 0x2b9fcb;
-const C_LAGOON = 0x8fe6ee;
+export const SEA_COLOR = 0x256c9c;
+const C_LAGOON = 0x4fc6dc;
 const C_LINE = 0xf4fdff;
 const C_SHADOW = 0x05324a;
 
@@ -220,7 +220,7 @@ void main() {
   float line = max(l.x, l.y);
   // Tint alpha calms the moving water inside the area so the grid reads clean.
   vec3 col = mix(uLagoon, uLagoon * 0.93, chk);
-  float a = 0.38 + chk * 0.03;
+  float a = 0.46 + chk * 0.03;
   col = mix(col, uLine, line);
   a = mix(a, 0.72, line);
   gl_FragColor = vec4(col, a * inside);

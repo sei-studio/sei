@@ -1,0 +1,17 @@
+{
+  "texture": "water-002-normal.jpg",
+  "normal": true,
+  "tileA": 1100,
+  "tileB": 760,
+  "rotA": 0,
+  "rotB": -40,
+  "dirA": [1, 0],
+  "dirB": [0, 1],
+  "mixB": 0.5,
+  "bump": 0.9,
+  "contrast": 1.3,
+  "lo": "#062a4f",
+  "mid": "#0b4c7d",
+  "hi": "#4a9ccc",
+  "swell": 0.06
+}
