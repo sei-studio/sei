@@ -104,6 +104,8 @@ import {
 import { warm as warmPitchBus } from '../voice/pitchBus';
 import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
 import { callSetupFailureProps } from '../voice/callSetupFailure';
+import { createCallConnectClock } from '../voice/connectClock';
+import type { CallConnectTiming } from '@shared/callConnect';
 import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
@@ -380,6 +382,27 @@ function inGameNow(characterId: string): boolean {
 /** A companion's slice of the interrupt counts, for its hang-up report. */
 function interruptsFor(characterId: string): { interrupts: CallInterruptCounts } {
   return { interrupts: interruptStats.take(characterId) };
+}
+/** 261127 (T563): Call press -> live -> opener audible, for voice_call_ended
+ * (connectClock.ts). Measures only; nothing waits on it. */
+const connectClock = createCallConnectClock({ now: () => performance.now() });
+/** The dialed companion's connect timing for its hang-up report (none for a
+ * joiner, or a call that never connected). */
+function connectFor(characterId: string): { connect?: CallConnectTiming } {
+  const connect = connectClock.take(characterId);
+  return connect ? { connect } : {};
+}
+/** DevTools line (numbers only) once the opener is audible. */
+function logConnectTiming(): void {
+  const t = connectClock.peek();
+  if (!t) return;
+  const f = (v: number | string | undefined): string => (v === undefined ? '-' : String(v));
+  console.log(
+    `[sei/voice] call_connect first_line=${f(t.first_line_ms)} connect=${f(t.connect_ms)} gate=${f(t.gate)} ` +
+      `mic_permission=${f(t.mic_permission_ms)} setup_reads=${f(t.setup_reads_ms)} mic_open=${f(t.mic_open_ms)} ` +
+      `stt_ready=${f(t.stt_ready_ms)} greet_request=${f(t.greet_request_ms)} greet_ready=${f(t.greet_ready_ms)} ` +
+      `opener_queued=${f(t.opener_queued_ms)} greet_path=${f(t.greet_path)} stt_local=${f(t.stt_local)}`,
+  );
 }
 /** When each participant's audio went live — basis for their connectedMs row. */
 const liveSince = new Map<string, number>();
@@ -943,6 +966,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // 261123: the turn's first line also times its first audio bytes (and
     // carries main's LLM stamps on ctx.replyTiming); see replyClock.ts.
     const firstAudio = replyClock.lineQueued(ctx.replyTiming);
+    connectClock.mark('opener_queued_ms'); // only the call's first line counts
     // Caption is set when this clip reaches the playhead (see the audio queue's
     // onSpeakingChange below), NOT here at enqueue time — otherwise a multi-line
     // reply (or two companions' queued lines) would jump the caption straight to
@@ -1513,6 +1537,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // nudge's end_call could hang up the call in the middle of the share.
     const eligible = idleNudgeEligible(s.participants, summons, useBackseatStore.getState().sharingFor);
     idleNudgeInFlight = true;
+    connectClock.closeOpener(); // a nudged line is not the opener
     // Read BEFORE the turn runs and spend it here: main gets a different note
     // for a follow-up, and only one follow-up goes out per question.
     const awaitingAnswer = idleQuestionMode();
@@ -1664,6 +1689,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // unattended call alive).
     noteCallActivity();
     replyClockAt = performance.now(); // start the reply-latency clock (see speakCompanionLine)
+    connectClock.closeOpener(); // a clip heard after this answers the player
     const mySeq = ++directorSeq; // cancels any in-flight companion chain
     clearTurnCapture(); // a fresh utterance supersedes any pending turn capture
     lastReactorId = null; // fresh utterance: reset the chain's spread memory
@@ -1771,6 +1797,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // record = a generation the renderer never dispatched (an in-world say()
       // routed up), which is current by definition.
       const originSeq = speakerOriginSeq.get(characterId) ?? directorSeq;
+      // 261127 (T563): the dialed companion's first line is the greeting.
+      connectClock.greetLine(characterId, ctx.replyTiming?.llmStartAt);
       // Lines can arrive before the (first) line opens, or while a call scene
       // is still walking the companion on (introHold): buffer, and flush when
       // the gate lifts. Anything outside those two states has no call to speak
@@ -1957,6 +1985,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       speakerOriginSeq.clear();
       lastReactorId = null;
       const dialStart = Date.now();
+      connectClock.start(characterId);
       liveSince.clear();
       interruptStats.reset();
       cutTracker.clear();
@@ -2000,6 +2029,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // to MicAccessCard, which dials again by itself once access is on.
       const mic = await micPreflight();
       if (session !== mySession) return;
+      connectClock.mark('mic_permission_ms');
       if (mic !== 'ok') {
         set({
           participants: [],
@@ -2048,6 +2078,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // and is buffered into pendingCompanionLines, then spoken once we go live.
       speakerOriginSeq.set(characterId, directorSeq); // date the greet's lines
       void sei.voiceGreet?.(characterId)?.catch(() => {});
+      // Main greets over the bot's port when this companion is in a game
+      // (index.ts greetVoiceCall), else with a standalone turn.
+      connectClock.note({
+        greetPath: useDataStore.getState().summons[characterId]?.kind === 'online' ? 'in_game' : 'app',
+      });
 
       queue = createAudioQueue(
         (speaking, cid, text) => {
@@ -2096,6 +2131,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // the mic hearing these words back is her, not the player.
           if (text) noteAudibleLine(text);
           replyClock.audible();
+          if (connectClock.audible()) logConnectTiming();
           dictation?.armBargeGrace();
         },
       );
@@ -2161,10 +2197,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         /* absent bridge / failed read → whisper behavior */
       }
       if (session !== mySession) return;
+      connectClock.mark('setup_reads_ms');
       const policy = sttPolicy(callCfg, callCfg?.ai_backend_kind ?? 'cloud-proxy', {
         uiLanguage: callCfg?.ui_language,
         sensevoiceReady,
       });
+      connectClock.note({ sttLocal: policy.localModel });
       // The SenseVoice local leg: utterance PCM → main-side sherpa. Text comes
       // back already normalized (main applies the same normalizeSttText as the
       // cloud path).
@@ -2250,6 +2288,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // Output path settled — safe to schedule the ring (see ringNow).
           onMicReady: () => {
             window.clearTimeout(ringFallback);
+            if (session === mySession) connectClock.mark('mic_open_ms');
             ringNow();
           },
           // Mode matrix (sttPolicy.ts): cloud users without the local-fallback
@@ -2384,6 +2423,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         dictation = null;
         return;
       }
+      connectClock.mark('stt_ready_ms');
       dictation.setMuted(useUiStore.getState().callMuted);
 
       // Stay OUTGOING (ringing, no stopwatch) until the min ring has elapsed AND
@@ -2403,6 +2443,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
 
       // Connected: the stopwatch starts HERE, the moment we are actually ready.
+      connectClock.connected({ minRingMs: MIN_RING_MS, greetingTimedOut: pendingCompanionLines.length === 0 });
       const now = Date.now();
       liveSince.set(characterId, now);
       interruptStats.join(characterId);
@@ -2505,7 +2546,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .voiceCallSetActive({
           characterId,
           active: false,
-          ...(since !== undefined ? { connectedMs: Date.now() - since, ...interruptsFor(characterId) } : {}),
+          ...(since !== undefined
+            ? { connectedMs: Date.now() - since, ...interruptsFor(characterId), ...connectFor(characterId) }
+            : {}),
           reason,
         })
         .catch(() => {});
@@ -2558,12 +2601,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           .voiceCallSetActive({
             characterId: id,
             active: false,
-            ...(since !== undefined ? { connectedMs: now - since, ...interruptsFor(id) } : {}),
+            ...(since !== undefined ? { connectedMs: now - since, ...interruptsFor(id), ...connectFor(id) } : {}),
             reason,
           })
           .catch(() => {});
       }
       liveSince.clear();
+      connectClock.reset();
       directorSendSeq.clear();
       directorSendFailed.clear();
       reconnectingCount = 0;

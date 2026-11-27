@@ -63,6 +63,7 @@ import { trackScopedWrite, drainScopedWrites, isAccountTeardownActive, isScopeSw
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
+import { callConnectProps } from '../shared/callConnect';
 import { endCallsForAccountSwitch } from './voice/accountSwitchCalls';
 import { gameEndRoute, mainClosedCallRoute } from './nextStepReach';
 import type { GoodbyeNote } from './sessionGoodbye';
@@ -1866,7 +1867,7 @@ async function bootstrap(): Promise<void> {
     },
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
-    notifyCallEnded: (id, connectedMs, reason, interrupts) => {
+    notifyCallEnded: (id, connectedMs, reason, interrupts, connect) => {
       void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
@@ -1885,6 +1886,9 @@ async function bootstrap(): Promise<void> {
         // the renderer's hang-up carries them; a call main closes itself (quit,
         // account switch) has none and leaves them out rather than send zeros.
         ...(interrupts ? callInterruptProps(interrupts) : {}),
+        // 261127 (T563): Call press -> live -> opener audible, the dialed
+        // companion's only (callConnect.ts). Same rule: absent, never zeros.
+        ...callConnectProps(connect),
       });
       // 261013 (T119): the companion's hang-up left a plan; it came from a call.
       if (goodbye.nextStepHook) {
@@ -1944,13 +1948,17 @@ async function bootstrap(): Promise<void> {
         updateHomeNextStep(id, (dir) => consumeNextStep(dir));
         try {
           const { sendVoiceGreetingTurn } = await import('./chat/chatService');
-          const replies = await sendVoiceGreetingTurn(id, peers, { plan });
+          // 261127 (T563): when the greeting's LLM request went out, sent on
+          // its first line as replyTiming (voice_call_ended connect phases).
+          const timing: { llmStartAt?: number } = {};
+          const replies = await sendVoiceGreetingTurn(id, peers, { plan, timing });
           // The greeting is spoken, so each line carries its place in the reply
           // for TTS conditioning (260729): first line no `prev`, last no `more`.
           replies.forEach((r, i) =>
             pushChatMessage(id, r, {
               prev: i > 0 ? replies[i - 1].text : undefined,
               more: i < replies.length - 1,
+              ...(i === 0 && timing.llmStartAt !== undefined ? { replyTiming: { llmStartAt: timing.llmStartAt } } : {}),
             }),
           );
         } catch (err) {

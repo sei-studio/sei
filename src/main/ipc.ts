@@ -46,6 +46,7 @@ import { UI_LANGUAGES, normalizeUiLanguage, uiLocaleTag } from '../shared/uiLang
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
+import { sanitizeCallConnect, type CallConnectTiming } from '../shared/callConnect';
 import type { FishAudioResult, FishOverrideResult } from '../shared/fishVoices';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
@@ -246,6 +247,7 @@ export interface IpcHandlerDeps {
     connectedMs: number,
     reason: string,
     interrupts?: CallInterruptCounts,
+    connect?: CallConnectTiming,
   ) => void;
   /**
    * Voice calls (260705): the call pipeline went live — make the companion
@@ -2343,6 +2345,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             laugh_dropped: z.number().int().nonnegative().default(0),
           })
           .optional(),
+        // Hang-up only (261127): connect timing for voice_call_ended. Read
+        // field by field (sanitizeCallConnect) so a bad value is dropped
+        // alone and can never fail the report that posts the call row.
+        connect: z.unknown().optional(),
       })
       .parse(argsRaw);
     // The state transition and its account-switch cases live in callState
@@ -2351,7 +2357,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const fx = applyCallReport(args);
     if (fx.voiceCall !== null) deps.supervisor.setVoiceCall(args.characterId, fx.voiceCall);
     if (fx.endedMs !== null) {
-      deps.notifyCallEnded?.(args.characterId, fx.endedMs, args.reason ?? 'unspecified', args.interrupts);
+      deps.notifyCallEnded?.(
+        args.characterId,
+        fx.endedMs,
+        args.reason ?? 'unspecified',
+        args.interrupts,
+        sanitizeCallConnect(args.connect),
+      );
     }
     if (!fx.stamp) return;
     // Presence (260707): a call is a real interaction, so stamp last_chatted at
