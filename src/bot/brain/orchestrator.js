@@ -3732,7 +3732,12 @@ function maybeWarnByteCap(loop, warned) {
       loop._fightMobId = data?.attacker?.id ?? null
     } else {
       let eventAddendum = (typeof adapter.eventAddendum === 'function')
-        ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
+        ? (isIdle
+          // 261127 (pass 66): the idle tick's teammate sentence only with
+          // AI teammates here (promptLibrary IDLE_TEAM_TEXT). Only the
+          // addendum sees the flag; the Data line keeps the event's own data.
+          ? adapter.eventAddendum('sei:idle', { ...(data ?? {}), teammates: companions.length > 0 })
+          : adapter.eventAddendum(event, data))
         : ''
       const isP1Event = event === 'player_chat' || event === 'sei:chat_received'
       if (isP1Event && data?.gameEvent === true) {
