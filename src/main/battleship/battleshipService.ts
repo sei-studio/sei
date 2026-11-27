@@ -751,7 +751,7 @@ async function dispatchChat(s: Session): Promise<void> {
       characterId: s.characterId,
       kind: 'chat-reply',
       contract: await contractBlock(s),
-      turnBlock: turnBlock(s, 'chat-reply', null, entries.map((e) => e.text)),
+      turnBlock: turnBlock(s, 'chat-reply', null, { playerLines: entries.map((e) => e.text), player: await playerNameOf() }),
       gameLog: s.gameLog,
       unansweredIds: entries.map((e) => e.id),
       clock: s.clock,
@@ -1130,41 +1130,48 @@ export function firedCellsText(grid: BATTLESHIPGrid): string {
   return `You fired at ${done.length} cells. The only cells you have not fired at: ${open.join(', ')}.`;
 }
 
-function shotText(h: BATTLESHIPShotRecord, whose: 'your' | 'their'): string {
+function shotText(h: BATTLESHIPShotRecord, whose: string): string {
   const name = battleshipCellName(h.row, h.col);
-  return h.sunkShip ? `${name} sank ${whose} ${h.sunkShip}` : `${name} ${h.hit ? 'hit' : 'miss'}`;
+  return `${name} (${h.sunkShip ? `sank ${whose} ${h.sunkShip}` : h.hit ? 'hit' : 'miss'})`;
 }
 
 /** How many shots back each side the chat facts line shows. */
 const FACT_SHOTS = 2;
 
 /**
- * Chat-reply turns: the board as checked facts, from the character's side.
- * With two grids alone Haiku 5.5 mixed up whose board was whose ("that's a
- * miss on my side, you still have no sunk ship" right after the player sank
- * its battleship, 261128 eval).
+ * Chat-reply turns: the board as checked facts, written from the side the
+ * character talks from, with the player named. With two grids alone Haiku
+ * 5.5 mixed up whose board was whose ("that's a miss on my side, you still
+ * have no sunk ship" right after the player sank its battleship, 261128
+ * eval); with a "they / their" facts line it still flipped the pronouns when
+ * talking to the player ("they sank mine", 4 of 4 probe replies), and
+ * pointed the player at its own hits.
  */
 export function chatFactsText(f: {
+  player: string;
   theirShips: ReadonlyArray<BATTLESHIPShip>;
   yourShips: ReadonlyArray<BATTLESHIPShip>;
   history: ReadonlyArray<BATTLESHIPShotRecord>;
   turn: 'player' | 'ai';
 }): string {
-  const sunkList = (ships: ReadonlyArray<BATTLESHIPShip>): string => {
-    const sunk = ships.filter((sh) => sh.sunk).map((sh) => sh.name);
-    return `${sunk.length} of ${ships.length || 5}${sunk.length ? ` (${sunk.join(', ')})` : ''}`;
+  const P = f.player;
+  const sunk = (ships: ReadonlyArray<BATTLESHIPShip>): string => {
+    const names = ships.filter((sh) => sh.sunk).map((sh) => sh.name);
+    return names.length ? `${names.length} (${names.join(', ')})` : 'none';
   };
-  const last = (by: 'ai' | 'player', whose: 'your' | 'their'): string => {
+  const last = (by: 'ai' | 'player', whose: string): string => {
     const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
     return shots.length ? shots.map((h) => shotText(h, whose)).join(', ') : 'none yet';
   };
   return [
-    'Facts the app checked. Anything you say about the game has to match these:',
-    `You sank ${sunkList(f.theirShips)} of their ships. They sank ${sunkList(f.yourShips)} of yours.`,
-    `Your last shots at their ships, newest first: ${last('ai', 'their')}.`,
-    `Their last shots at your ships, newest first: ${last('player', 'your')}.`,
-    `Next shot: ${f.turn === 'ai' ? 'yours' : 'theirs'}.`,
-  ].join(' ');
+    'Facts the app checked. Anything you say about the game has to match them.',
+    `Your ships ${P} has sunk: ${sunk(f.yourShips)}. ${P}'s ships you have sunk: ${sunk(f.theirShips)}.`,
+    `${P}'s last shots, on your board, newest first: ${last('player', 'your')}.`,
+    `Your last shots, on ${P}'s board, newest first: ${last('ai', `${P}'s`)}.`,
+    `Next shot: ${f.turn === 'ai' ? 'yours' : `${P}'s`}.`,
+    `Talking to ${P}, "you" is ${P} and "my" is yours: ${P}'s shots sink your ships, and yours sink theirs. ` +
+      `Any tip about where ${P} should shoot is about your board, never ${P}'s.`,
+  ].join('\n');
 }
 
 interface Region {
@@ -1243,9 +1250,10 @@ function turnBlock(
   s: Session,
   kind: BoardTurnKind,
   retryNote: string | null,
-  /** Chat-reply turns: the player's unanswered line(s), quoted at the end. */
-  playerLines: ReadonlyArray<string> = [],
+  /** Chat-reply turns: the player's unanswered line(s) (quoted at the end) and their name. */
+  opts: { playerLines?: ReadonlyArray<string>; player?: string } = {},
 ): string {
+  const playerLines = opts.playerLines ?? [];
   const lines: string[] = [];
   // Its own ship cells ("S") only where it needs them. On a chat reply the
   // board shows only their shots on it: Haiku 5.5 told the player where its
@@ -1305,7 +1313,13 @@ function turnBlock(
   } else if (kind === 'chat-reply') {
     if (s.status === 'active') {
       lines.push(
-        chatFactsText({ theirShips: s.playerGrid.ships, yourShips: s.aiGrid.ships, history: s.history, turn: s.turn }),
+        chatFactsText({
+          player: opts.player ?? 'the player',
+          theirShips: s.playerGrid.ships,
+          yourShips: s.aiGrid.ships,
+          history: s.history,
+          turn: s.turn,
+        }),
       );
     }
     if (s.aiTurnFailed) {
