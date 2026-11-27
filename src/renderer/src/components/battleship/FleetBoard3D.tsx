@@ -59,6 +59,7 @@ import {
 } from './fleetUtil';
 import { watchWebglContext } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
+import { useWindowWatched } from '../tabletop/useWindowWatched';
 
 export interface FleetBoard3DProps {
   game: BATTLESHIPGameState | null;
@@ -110,6 +111,7 @@ export function FleetBoard3D({
   onSceneLost,
 }: FleetBoard3DProps): React.ReactElement {
   const t = useT();
+  const watched = useWindowWatched();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<FleetScene | null>(null);
   const [anchors, setAnchors] = useState<ReturnType<FleetScene['anchors']> | null>(null);
@@ -566,7 +568,12 @@ export function FleetBoard3D({
               ) : null}
             </div>
           ) : (
-            <div className={shimmer ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
+            <div
+              className={
+                shimmer ? `${hud.turnChip} ${hud.thinking}${watched ? '' : ` ${hud.unwatched}`}` : hud.turnChip
+              }
+              aria-live="polite"
+            >
               {turnLabel}
             </div>
           )}

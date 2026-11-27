@@ -69,6 +69,11 @@
   animation: chessShimmer 1.6s linear infinite;
 }
 
+/* Nobody is looking: hold the shimmer still (it repaints every frame). */
+.thinking.unwatched {
+  animation-play-state: paused;
+}
+
 @keyframes chessShimmer {
   from {
     background-position: 200% 0;

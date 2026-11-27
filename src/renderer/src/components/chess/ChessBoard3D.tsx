@@ -36,6 +36,7 @@ import { Piece } from './pieces';
 import { ChessScene } from './three/ChessScene';
 import { watchWebglContext } from '../tabletop/SceneGuard';
 import styles from './ChessBoard3D.module.css';
+import { useWindowWatched } from '../tabletop/useWindowWatched';
 
 export interface ChessBoard3DProps {
   characterId: string;
@@ -61,6 +62,7 @@ export function ChessBoard3D({
   onSceneLost,
 }: ChessBoard3DProps): React.ReactElement | null {
   const t = useT();
+  const watched = useWindowWatched();
   const game = useChessStore((s) => s.games[characterId]);
   const ui = useChessStore((s) => boardUiFor(s, characterId));
   const revealed = useChessStore((s) => s.revealed[characterId] ?? null);
@@ -382,7 +384,11 @@ export function ChessBoard3D({
       <div className={styles.topCenter}>
         {game.status === 'active' ? (
           <div
-            className={game.aiThinking ? `${styles.turnChip} ${styles.thinking}` : styles.turnChip}
+            className={
+              game.aiThinking
+                ? `${styles.turnChip} ${styles.thinking}${watched ? '' : ` ${styles.unwatched}`}`
+                : styles.turnChip
+            }
             aria-live="polite"
           >
             {turnLabel}

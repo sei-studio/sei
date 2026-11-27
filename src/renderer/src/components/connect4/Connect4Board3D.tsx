@@ -22,6 +22,7 @@ import { Connect4Scene } from './three/Connect4Scene';
 import { COLS, ROWS, landingRow, winningCells, type Board } from './connect4Util';
 import { watchWebglContext } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
+import { useWindowWatched } from '../tabletop/useWindowWatched';
 
 export interface Connect4Board3DProps {
   game: CONNECT4GameState | null;
@@ -52,6 +53,7 @@ export function Connect4Board3D({
   const [scene, setScene] = useState<Connect4Scene | null>(null);
   const [hoverCol, setHoverCol] = useState<number | null>(null);
   const [keyboard, setKeyboard] = useState(false);
+  const watched = useWindowWatched();
   const [optimistic, setOptimistic] = useState<{ r: number; c: number; moves: number } | null>(null);
   const [anchors, setAnchors] = useState<ReturnType<Connect4Scene['pileAnchors']> | null>(null);
 
@@ -247,7 +249,14 @@ export function Connect4Board3D({
               ) : null}
             </div>
           ) : (
-            <div className={game.aiThinking ? `${hud.turnChip} ${hud.thinking}` : hud.turnChip} aria-live="polite">
+            <div
+              className={
+                game.aiThinking
+                  ? `${hud.turnChip} ${hud.thinking}${watched ? '' : ` ${hud.unwatched}`}`
+                  : hud.turnChip
+              }
+              aria-live="polite"
+            >
               {turnLabel}
             </div>
           )}

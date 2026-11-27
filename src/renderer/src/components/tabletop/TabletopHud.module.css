@@ -189,6 +189,12 @@
   animation: tabletopShimmer 1.6s linear infinite;
 }
 
+/* Nobody is looking (another app has focus, or the window is hidden): hold
+   the shimmer still instead of repainting the text every frame. */
+.thinking.unwatched {
+  animation-play-state: paused;
+}
+
 @keyframes tabletopShimmer {
   from {
     background-position: 200% 0;
