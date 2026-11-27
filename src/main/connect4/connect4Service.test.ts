@@ -63,6 +63,7 @@ import {
   __setConnect4TestHooks,
   __resetConnect4ForTests,
 } from './connect4Service';
+import { loadConfig } from '../configStore';
 
 const CHAR = '44444444-4444-4444-8444-444444444444';
 let dir: string;
@@ -415,6 +416,37 @@ describe('Four in a Row turns', () => {
     expect(state().moves).toBe(0); // the chat turn's play() was refused
     const chatCall = calls[0];
     expect(JSON.stringify(chatCall.messages)).toContain('1 2 3 4 5 6 7');
+  });
+
+  it('a config read that throws fails the attempt (then Try again), never a turn stuck on thinking', async () => {
+    vi.mocked(loadConfig).mockRejectedValue(new Error('config unreadable'));
+    try {
+      await startCONNECT4(CHAR, { playerColor: 'r' });
+      await playerMove(CHAR, 3);
+      await waitFor(() => state().aiTurnFailed);
+      expect(state().aiThinking).toBe(false);
+      expect(state().turn).toBe('y');
+      expect(calls).toHaveLength(0); // no model call without a contract
+    } finally {
+      vi.mocked(loadConfig).mockImplementation(async () => ({ preferred_name: 'Player' }) as never);
+    }
+    reply = () => ({ content: [toolUse('play', { column: 2 })] });
+    await retryAiTurn(CHAR);
+    await waitFor(() => state().turn === 'r' && !state().aiThinking);
+    expect(state().aiTurnFailed).toBeNull();
+  });
+
+  it('a chat reply after a failed move knows the move failed and points at Try again', async () => {
+    reply = () => ({ content: [text('Hmm.')] });
+    await startCONNECT4(CHAR, { playerColor: 'r' });
+    await playerMove(CHAR, 3);
+    await waitFor(() => state().aiTurnFailed);
+    calls = [];
+    reply = () => ({ content: [text('Oops, my move broke.')] });
+    await handlePlayerChat({ characterId: CHAR, text: 'your turn?' });
+    const sent = JSON.stringify(calls[0].messages);
+    expect(sent).toContain('your last try to move did not work');
+    expect(sent).toContain('Try again');
   });
 
   it('a win ends the game with one play row and an ended event that counts LLM moves, never engine moves', async () => {

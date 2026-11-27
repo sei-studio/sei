@@ -118,6 +118,8 @@ interface Session {
   startedAt: number;
   lastActivityAt: number;
   turnCtrl: AbortController | null;
+  /** The game-over reaction's LLM call (aborted when the session goes away). */
+  reactionCtrl: AbortController | null;
   /** Bumped when the game ends: every turn begun before is stale. */
   turnSeq: number;
   /** Bumped per character move turn: a move applies only on the current one. */
@@ -242,7 +244,7 @@ export async function startCONNECT4(
   const startGuard = beginSessionStart();
   // A new game over a finished one is a rematch, whichever button started it.
   const isRematch = opts?.rematch === true || !!existing;
-  if (existing) sessions.delete(characterId);
+  if (existing) dropSession(existing);
 
   const pick = opts?.playerColor ?? 'random';
   const playerColor: CONNECT4Color =
@@ -262,6 +264,7 @@ export async function startCONNECT4(
     startedAt: Date.now(),
     lastActivityAt: Date.now(),
     turnCtrl: null,
+    reactionCtrl: null,
     turnSeq: 0,
     moveToken: 0,
     appliedToken: 0,
@@ -367,7 +370,7 @@ export async function endCONNECT4(characterId: string): Promise<void> {
   if (s.status !== 'ended') {
     endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
   }
-  sessions.delete(characterId);
+  dropSession(s);
 }
 
 /**
@@ -439,7 +442,6 @@ async function dispatchMove(s: Session, token: number): Promise<void> {
   const seq = s.turnSeq;
   if (!moveTurnLive(s, token, seq)) return;
   const voiceCall = isCallActive(s.characterId);
-  const contract = await contractBlock(s);
   const outcome = await runWithAttempts({
     isLive: () => moveTurnLive(s, token, seq),
     onUsageLimit: (err) => raiseUsageLimitPopup(err, 'connect4'),
@@ -451,6 +453,9 @@ async function dispatchMove(s: Session, token: number): Promise<void> {
     attempt: async (_i, retryNote) => {
       if (s.appliedToken === token) return alreadyMovedResult();
       try {
+        // Inside the attempt: a config read that throws is a failed attempt
+        // (retried, then Try again), never a turn stuck on "thinking".
+        const contract = await contractBlock(s);
         const r = await runBoardTurn({
           surface: 'connect4',
           characterId: s.characterId,
@@ -483,6 +488,9 @@ async function dispatchMove(s: Session, token: number): Promise<void> {
   if (outcome.kind === 'aborted') {
     if (s.moveToken === token && s.status === 'active' && s.aiThinking) {
       s.aiThinking = false;
+      // Aborted while the turn still stands (nothing superseded it): it is
+      // the character's turn with no move coming, so offer Try again.
+      if (moveTurnLive(s, token, seq)) s.aiTurnFailed = { reason: 'no_move', attempts: 1 };
       push(s);
     }
     return;
@@ -616,6 +624,17 @@ async function dispatchChat(s: Session): Promise<void> {
   for (const e of entries) e.resolve({ replies, streamed: true });
 }
 
+/**
+ * Remove a session from the map (rematch, panel close, account switch, quit)
+ * and abort its game-over reaction, which would otherwise keep talking about
+ * a game that is gone.
+ */
+function dropSession(s: Session): void {
+  try { s.reactionCtrl?.abort(); } catch { /* already done */ }
+  s.reactionCtrl = null;
+  if (sessions.get(s.characterId) === s) sessions.delete(s.characterId);
+}
+
 function registerAbort(s: Session, ctrl: AbortController, done: boolean): void {
   if (!done) s.turnCtrl = ctrl;
   else if (s.turnCtrl === ctrl) s.turnCtrl = null;
@@ -728,7 +747,10 @@ async function runGameOverTurn(s: Session): Promise<void> {
     // A new game (rematch) or a closed panel supersedes the reaction.
     isStale: () => sessions.get(s.characterId) !== s,
     onTool: async (tu) => ({ note: `The game is over; "${tu.name}" does nothing now. Say your line, or nothing.`, isError: true }),
-    registerAbort: () => {},
+    registerAbort: (ctrl, done) => {
+      if (!done) s.reactionCtrl = ctrl;
+      else if (s.reactionCtrl === ctrl) s.reactionCtrl = null;
+    },
     pushChatMessage: requireDeps().pushChatMessage,
     provider: providerOverride,
   });
@@ -948,9 +970,13 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     lines.push('Work it out in plain text if you need to, then call play() with your column, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {
     lines.push(
-      s.turn === ai
-        ? 'They just said something. Your move comes in its own turn right after this reply. Answer them in text, or say nothing.'
-        : 'They just said something. It is their move. Answer them in text, or say nothing.',
+      s.turn === ai && s.aiTurnFailed
+        ? 'They just said something. It is your move, but your last try to move did not work, so no move is coming ' +
+            'until they press Try again. Answer them in text, or say nothing. If they ask, say your move failed and ' +
+            'they can press Try again.'
+        : s.turn === ai
+          ? 'They just said something. Your move comes in its own turn right after this reply. Answer them in text, or say nothing.'
+          : 'They just said something. It is their move. Answer them in text, or say nothing.',
     );
   } else if (kind === 'game-over' && s.result) {
     const r = s.result;
@@ -984,7 +1010,7 @@ export function endAllCONNECT4(reason: string): void {
     if (s.status !== 'ended') {
       endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason });
     }
-    sessions.delete(s.characterId);
+    dropSession(s);
   }
 }
 

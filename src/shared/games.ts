@@ -79,7 +79,7 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     available: true,
     aliases: [
       'Sea battle', 'Naval battle', 'Battaglia tra flotte', 'Battaglia navale', '舰队对战', '海战', '艦隊バトル', '海戦',
-      'Битва флотов', 'Морской бой', 'Batalha de frotas', 'Batalha naval', 'Batalla naval',
+      'Битва флотов', 'Морской бой', 'Batalha de frotas', 'Batalha naval', 'Batalla naval', 'Batalla de flotas',
     ],
   },
   // 260803: no "Backseat" entry. Sharing your screen is not a game and it does

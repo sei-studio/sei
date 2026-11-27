@@ -45,7 +45,7 @@ import { CONNECT4Panel } from '../components/connect4/Connect4Panel';
 import { BattleshipPanel } from '../components/battleship/BattleshipPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { getGameSurface } from '../lib/gameSurfaces';
-import { botGameName } from '../lib/gameLaunch';
+import { botGameName, dropIdleBoardPanels } from '../lib/gameLaunch';
 import { GameSurface } from '../components/GameSurface';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { sei } from '../lib/ipcClient';
@@ -490,6 +490,16 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   useEffect(() => {
     if (!mcOnline) mcDashReset(characterId);
   }, [mcOnline, characterId, mcDashReset]);
+  // A bot coming online takes the game slot: drop an idle board panel (a
+  // launch card or a finished game) that would otherwise sit in front of the
+  // dashboard. Only on the offline -> online edge for the same companion, so
+  // a panel opened while the bot is already online stays.
+  const prevOnline = useRef<{ id: string; online: boolean } | null>(null);
+  useEffect(() => {
+    const prev = prevOnline.current;
+    prevOnline.current = { id: characterId, online: mcOnline };
+    if (mcOnline && prev?.id === characterId && !prev.online) dropIdleBoardPanels(characterId);
+  }, [mcOnline, characterId]);
   // Launch panel (260721): opened by the games picker's tile for a bot-backed
   // game while the bot is offline; it owns the Launch button. Once the bot
   // comes online it hands the same game slot off to the live dashboard.

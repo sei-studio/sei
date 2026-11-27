@@ -111,11 +111,16 @@ export class TabletopStage {
   private readonly ambientFrameMs: number;
   private readonly ambientSleepMs: number;
   private readonly onVisibility = (): void => {
-    if (!document.hidden) this.wake();
+    if (!document.hidden) this.resumeAmbient();
   };
   private readonly onFocus = (): void => {
     this.focused = true;
-    this.wake();
+    this.resumeAmbient();
+  };
+  /** three.js re-creates its GPU state on restore; draw a fresh frame. */
+  private readonly onContextRestored = (): void => {
+    this.invalidate();
+    this.resumeAmbient();
   };
   private readonly onBlur = (): void => {
     this.focused = false;
@@ -141,6 +146,7 @@ export class TabletopStage {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.softwareGl ? 1 : 2));
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = 'block';
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(ROOM_COLOR);
@@ -226,6 +232,17 @@ export class TabletopStage {
     if (wasAsleep) this.scheduleAmbient(0);
   }
 
+  /**
+   * Back from a hidden document or an unfocused window. The ambient loop
+   * stopped while it was away even if the awake window has not run out, so
+   * wake() alone (which only restarts a sleeping loop) is not enough.
+   */
+  private resumeAmbient(): void {
+    if (this.disposed || !this.ambient || this.ambientDisabled) return;
+    this.awakeUntil = performance.now() + this.ambientSleepMs;
+    if (!this.raf && !this.ambientTimer) this.scheduleAmbient(0);
+  }
+
   /** True while the ambient tier is allowed to animate. */
   ambientAwake(now = performance.now()): boolean {
     return (
@@ -284,11 +301,14 @@ export class TabletopStage {
     document.removeEventListener('visibilitychange', this.onVisibility);
     window.removeEventListener('focus', this.onFocus);
     window.removeEventListener('blur', this.onBlur);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
     for (const r of this.owned) r.dispose();
     this.owned.length = 0;
+    // Detach first: the context loss below must not reach the board's
+    // context-lost watcher (it would show the failure notice on unmount).
+    this.renderer.domElement.remove();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
-    this.renderer.domElement.remove();
   }
 
   // ── Internals ──────────────────────────────────────────────────────────

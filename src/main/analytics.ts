@@ -568,6 +568,8 @@ export function surfaceForEvent(event: string): string | null {
   if (event.startsWith('chat_') || event.startsWith('first_moment_')) return 'chat';
   if (event.startsWith('voice_call_')) return 'voice';
   if (event.startsWith('chess_')) return 'chess';
+  if (event.startsWith('connect4_')) return 'connect4';
+  if (event.startsWith('battleship_')) return 'battleship';
   if (event.startsWith('draw_')) return 'draw';
   if (event.startsWith('backseat_')) return 'backseat';
   if (event === 'character_summoned' || event.startsWith('bot_session_') || event.startsWith('summon_')) return 'game';

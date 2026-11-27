@@ -135,6 +135,8 @@ interface Session {
   battleStartedAt: number | null;
   lastActivityAt: number;
   turnCtrl: AbortController | null;
+  /** The game-over reaction's LLM call (aborted when the session goes away). */
+  reactionCtrl: AbortController | null;
   /** Bumped when the game ends: every turn begun before is stale. */
   turnSeq: number;
   /** Bumped per character turn (placement or shot). */
@@ -277,7 +279,7 @@ export async function startBATTLESHIP(
   const startGuard = beginSessionStart();
   // A new game over a finished one is a rematch, whichever button started it.
   const isRematch = opts?.rematch === true || !!existing;
-  if (existing) sessions.delete(characterId);
+  if (existing) dropSession(existing);
 
   const playerStarts = opts?.playerStarts ?? true;
   const s: Session = {
@@ -300,6 +302,7 @@ export async function startBATTLESHIP(
     battleStartedAt: null,
     lastActivityAt: Date.now(),
     turnCtrl: null,
+    reactionCtrl: null,
     turnSeq: 0,
     moveToken: 0,
     appliedToken: 0,
@@ -437,7 +440,7 @@ export async function endBATTLESHIP(characterId: string): Promise<void> {
   if (s.status !== 'ended') {
     endSession(s, { winner: null, reason: 'abandoned' }, { silent: true });
   }
-  sessions.delete(characterId);
+  dropSession(s);
 }
 
 /**
@@ -528,7 +531,6 @@ async function dispatchAiTurn(s: Session, token: number): Promise<void> {
   const kind = aiTurnKind(s);
   if (!kind || !aiTurnLive(s, token, seq, kind)) return;
   const voiceCall = isCallActive(s.characterId);
-  const contract = await contractBlock(s);
   const live = (): boolean => aiTurnLive(s, token, seq, kind);
   const outcome = await runWithAttempts({
     isLive: live,
@@ -541,6 +543,9 @@ async function dispatchAiTurn(s: Session, token: number): Promise<void> {
     attempt: async (_i, retryNote) => {
       if (s.appliedToken === token) return alreadyMovedResult();
       try {
+        // Inside the attempt: a config read that throws is a failed attempt
+        // (retried, then Try again), never a turn stuck on "thinking".
+        const contract = await contractBlock(s);
         const r = await runBoardTurn({
           surface: 'battleship',
           characterId: s.characterId,
@@ -576,6 +581,12 @@ async function dispatchAiTurn(s: Session, token: number): Promise<void> {
   if (outcome.kind === 'aborted') {
     if (s.moveToken === token && s.status !== 'ended' && s.aiThinking) {
       s.aiThinking = false;
+      // Aborted while the turn still stands (nothing superseded it): offer
+      // Try again rather than leave the game waiting on nobody.
+      if (live()) {
+        if (kind === 'place') s.aiFleet = 'failed';
+        s.aiTurnFailed = { reason: 'no_move', attempts: 1 };
+      }
       push(s);
     }
     return;
@@ -774,6 +785,17 @@ async function dispatchChat(s: Session): Promise<void> {
   for (const e of entries) e.resolve({ replies, streamed: true });
 }
 
+/**
+ * Remove a session from the map (rematch, panel close, account switch, quit)
+ * and abort its game-over reaction, which would otherwise keep talking about
+ * a game that is gone.
+ */
+function dropSession(s: Session): void {
+  try { s.reactionCtrl?.abort(); } catch { /* already done */ }
+  s.reactionCtrl = null;
+  if (sessions.get(s.characterId) === s) sessions.delete(s.characterId);
+}
+
 function registerAbort(s: Session, ctrl: AbortController, done: boolean): void {
   if (!done) s.turnCtrl = ctrl;
   else if (s.turnCtrl === ctrl) s.turnCtrl = null;
@@ -880,7 +902,10 @@ async function runGameOverTurn(s: Session): Promise<void> {
     maxTokens: SHOT_MAX_TOKENS,
     isStale: () => sessions.get(s.characterId) !== s,
     onTool: async (tu) => ({ note: `The game is over; "${tu.name}" does nothing now. Say your line, or nothing.`, isError: true }),
-    registerAbort: () => {},
+    registerAbort: (ctrl, done) => {
+      if (!done) s.reactionCtrl = ctrl;
+      else if (s.reactionCtrl === ctrl) s.reactionCtrl = null;
+    },
     pushChatMessage: requireDeps().pushChatMessage,
     provider: providerOverride,
   });
@@ -1091,9 +1116,13 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {
     lines.push(
-      aiTurnKind(s)
-        ? 'They just said something. Your own turn comes on its own right after this reply. Answer them in text, or say nothing.'
-        : 'They just said something. Answer them in text, or say nothing.',
+      s.aiTurnFailed
+        ? `They just said something. Your last try to ${s.status === 'preparing' ? 'place your fleet' : 'shoot'} did ` +
+            'not work, so nothing more happens until they press Try again. Answer them in text, or say nothing. If ' +
+            'they ask, say it failed and they can press Try again.'
+        : aiTurnKind(s)
+          ? 'They just said something. Your own turn comes on its own right after this reply. Answer them in text, or say nothing.'
+          : 'They just said something. Answer them in text, or say nothing.',
     );
   }
   return lines.join('\n');
@@ -1143,7 +1172,7 @@ export function endAllBATTLESHIP(reason: string): void {
     if (s.status !== 'ended') {
       endSession(s, { winner: null, reason: 'abandoned' }, { silent: true, reason });
     }
-    sessions.delete(s.characterId);
+    dropSession(s);
   }
 }
 

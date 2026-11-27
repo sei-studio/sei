@@ -129,6 +129,8 @@ describe('backend property', () => {
 describe('app_quit', () => {
   it('maps event names to surfaces', () => {
     expect(surfaceForEvent('chess_game_started')).toBe('chess');
+    expect(surfaceForEvent('connect4_panel_opened')).toBe('connect4');
+    expect(surfaceForEvent('battleship_turn_failed')).toBe('battleship');
     expect(surfaceForEvent('character_summoned')).toBe('game');
     expect(surfaceForEvent('voice_call_started')).toBe('voice');
     expect(surfaceForEvent('voice_call_ended')).toBeNull();

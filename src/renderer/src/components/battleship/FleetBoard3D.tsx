@@ -57,6 +57,7 @@ import {
   without,
   type GridPos,
 } from './fleetUtil';
+import { watchWebglContext } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
 
 export interface FleetBoard3DProps {
@@ -68,6 +69,8 @@ export interface FleetBoard3DProps {
   onPlaceFleet?: (ships: BATTLESHIPPlacement[]) => Promise<boolean>;
   /** Run the character's failed turn (placement or shot) again. */
   onRetry?: () => void;
+  /** The WebGL context was lost (true) or came back (false). */
+  onSceneLost?: (lost: boolean) => void;
 }
 
 interface Held {
@@ -98,7 +101,14 @@ const clampPos = (p: GridPos): GridPos => ({
 const samePos = (a: GridPos | null, b: GridPos | null): boolean =>
   a === b || (!!a && !!b && a.row === b.row && a.col === b.col);
 
-export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet, onRetry }: FleetBoard3DProps): React.ReactElement {
+export function FleetBoard3D({
+  game,
+  companionName,
+  onFire,
+  onPlaceFleet,
+  onRetry,
+  onSceneLost,
+}: FleetBoard3DProps): React.ReactElement {
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<FleetScene | null>(null);
@@ -199,6 +209,14 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet, onRetr
     };
   }, []);
 
+  const lostRef = useRef(onSceneLost);
+  lostRef.current = onSceneLost;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    return watchWebglContext(el, (lost) => lostRef.current?.(lost));
+  }, []);
+
   const view: FleetView = useMemo(() => {
     if (!game) {
       return { phase: 'battle', playerShips: [], playerCells: EMPTY_CELLS, enemyCells: EMPTY_CELLS, enemyShips: [], lastAiShot: null };
@@ -258,22 +276,27 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet, onRetr
   }, [scene, active, game?.aiThinking, aiFailed, game]);
 
   // ── Setup intents ─────────────────────────────────────────────────────────
-  function pickUp(name: BATTLESHIPShipName, grab: number, sticky: boolean): void {
-    const origin = draft.find((p) => p.name === name) ?? null;
-    if (origin) setDraft(without(draft, name));
+  /** `base`: the draft as it stands after a drop in the same handler (state lags a render). */
+  function pickUp(name: BATTLESHIPShipName, grab: number, sticky: boolean, base = draft): void {
+    const origin = base.find((p) => p.name === name) ?? null;
+    if (origin) setDraft(without(base, name));
     setHeld({ name, horizontal: origin ? origin.horizontal : true, grab, origin, sticky });
     setSelected(name);
   }
 
-  function dropHeld(at: BATTLESHIPPlacement | null): void {
-    if (!held) return;
+  /** Put the held ship down (or back); returns the draft it leaves. */
+  function dropHeld(at: BATTLESHIPPlacement | null): BATTLESHIPPlacement[] {
+    if (!held) return draft;
+    let next = draft;
     if (at && placementFits(at, placementCellsOf(draft))) {
-      setDraft([...without(draft, held.name), at]);
+      next = [...without(draft, held.name), at];
     } else if (at && held.origin) {
       // Did not fit: it goes back where it was.
-      setDraft([...without(draft, held.name), held.origin]);
+      next = [...without(draft, held.name), held.origin];
     }
+    if (next !== draft) setDraft(next);
     setHeld(null);
+    return next;
   }
 
   function returnToDock(): void {
@@ -403,10 +426,12 @@ export function FleetBoard3D({ game, companionName, onFire, onPlaceFleet, onRetr
       const idx = Number(k) - 1;
       if (Number.isInteger(idx) && idx >= 0 && idx < BATTLESHIP_SHIP_NAMES.length) {
         e.preventDefault();
-        if (held) dropHeld(held.origin);
+        // Switching ships puts the held one back first; pick up from that
+        // draft, not the stale render's (which would send it to the harbor).
+        const base = held ? dropHeld(held.origin) : draft;
         const name = BATTLESHIP_SHIP_NAMES[idx];
-        const origin = draft.find((p) => p.name === name);
-        pickUp(name, 0, true);
+        const origin = base.find((p) => p.name === name);
+        pickUp(name, 0, true, base);
         setCursor(origin ? { row: origin.row, col: origin.col } : (cursor ?? { row: 4, col: 3 }));
         setKeyboard(true);
         return;

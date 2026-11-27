@@ -716,6 +716,11 @@ export class ChessScene {
     this.invalidate();
   }
 
+  /** Draw a fresh frame (after the WebGL context comes back). */
+  redraw(): void {
+    this.invalidate();
+  }
+
   private invalidate(): void {
     if (this.disposed || this.raf) return;
     this.raf = requestAnimationFrame(this.frame);

@@ -42,6 +42,8 @@ type BadgeFn = (
     callStatus: string;
     callParticipants: readonly string[];
     chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
+    connect4Games?: Readonly<Record<string, { status: string } | null | undefined>>;
+    battleshipGames?: Readonly<Record<string, { status: string } | null | undefined>>;
     summons: Readonly<Record<string, { kind: string } | undefined>>;
   },
 ) => 'call' | 'game' | null;
@@ -92,6 +94,15 @@ describe('avatarActivityBadge (pure helper)', () => {
 
     // Activity is per-character: b's game never badges a.
     expect(badge('a', { ...quiet, chessGames: { b: { status: 'active' } } })).toBe(null);
+  });
+
+  it('Test 3b: a live Four in a Row or Fleet Battle game badges like chess', async () => {
+    const badge = await loadBadgeFn();
+    expect(badge('a', { ...quiet, connect4Games: { a: { status: 'active' } } })).toBe('game');
+    expect(badge('a', { ...quiet, connect4Games: { a: { status: 'ended' } } })).toBe(null);
+    expect(badge('a', { ...quiet, battleshipGames: { a: { status: 'preparing' } } })).toBe('game');
+    expect(badge('a', { ...quiet, battleshipGames: { a: { status: 'ended' } } })).toBe(null);
+    expect(badge('a', { ...quiet, battleshipGames: { b: { status: 'active' } } })).toBe(null);
   });
 
   it('Test 4: call wins over game for the same character', async () => {

@@ -34,12 +34,15 @@ import {
 } from './chessUtil';
 import { Piece } from './pieces';
 import { ChessScene } from './three/ChessScene';
+import { watchWebglContext } from '../tabletop/SceneGuard';
 import styles from './ChessBoard3D.module.css';
 
 export interface ChessBoard3DProps {
   characterId: string;
   /** Companion display name, shown in the turn label ("{Name}'s move"). */
   companionName: string;
+  /** The WebGL context was lost (true) or came back (false). */
+  onSceneLost?: (lost: boolean) => void;
 }
 
 /** Pieces offered by the promotion picker, in lichess order. */
@@ -55,6 +58,7 @@ const PROMO_NAMES: Record<(typeof PROMO_PIECES)[number], string> = {
 export function ChessBoard3D({
   characterId,
   companionName,
+  onSceneLost,
 }: ChessBoard3DProps): React.ReactElement | null {
   const t = useT();
   const game = useChessStore((s) => s.games[characterId]);
@@ -148,12 +152,19 @@ export function ChessBoard3D({
 
   // ── Scene lifecycle + pushes ─────────────────────────────────────────────
   const hasGame = !!game;
+  const lostRef = useRef(onSceneLost);
+  lostRef.current = onSceneLost;
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !hasGame) return;
     const s = new ChessScene(el);
     setScene(s);
+    const unwatch = watchWebglContext(el, (lost) => {
+      lostRef.current?.(lost);
+      if (!lost) s.redraw();
+    });
     return () => {
+      unwatch();
       s.dispose();
       setScene(null);
     };

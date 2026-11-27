@@ -26,6 +26,7 @@ import { Button } from '../Button';
 import { FlagIcon } from '../icons';
 import type { CONNECT4GameState, CONNECT4Result } from '@shared/connect4Ipc';
 import { Connect4Board3D } from './Connect4Board3D';
+import { SceneBoundary, SceneFailedNotice } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
 
 export interface CONNECT4PanelProps {
@@ -74,6 +75,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const resign = useConnect4Store((s) => s.resign);
   const retry = useConnect4Store((s) => s.retry);
   const hydrate = useConnect4Store((s) => s.hydrate);
+  const endGame = useConnect4Store((s) => s.end);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const name = character?.name ?? t('Companion');
@@ -81,6 +83,8 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const [colorChoice, setColorChoice] = useState<SideChoice>('random');
   const [startErr, setStartErr] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
+  /** The 3D scene could not start, or lost its WebGL context. */
+  const [sceneFailed, setSceneFailed] = useState(false);
   /** Rematch clicked on a finished game: show the launch layout again. */
   const [rematchScreen, setRematchScreen] = useState(false);
 
@@ -93,6 +97,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   useEffect(() => {
     setStartErr(null);
     setConfirmResign(false);
+    setSceneFailed(false);
     setRematchScreen(false);
   }, [characterId]);
 
@@ -123,13 +128,18 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
     <div className={hud.panel} aria-label={t('Four in a Row with {name}', { name })}>
       <div className={hud.stage}>
         <div className={hud.boardFill}>
-          <Connect4Board3D
-            game={showLaunch ? null : game}
-            companionName={name}
-            onDrop={(column) => move(characterId, column)}
-            onRetry={() => void retry(characterId)}
-          />
+          <SceneBoundary key={characterId} onFail={() => setSceneFailed(true)}>
+            <Connect4Board3D
+              key={characterId}
+              game={showLaunch ? null : game}
+              companionName={name}
+              onDrop={(column) => move(characterId, column)}
+              onRetry={() => void retry(characterId)}
+              onSceneLost={setSceneFailed}
+            />
+          </SceneBoundary>
         </div>
+        {sceneFailed ? <SceneFailedNotice onClose={() => void endGame(characterId)} /> : null}
 
         {showLaunch ? (
           <div className={hud.launch}>

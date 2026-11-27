@@ -37,6 +37,7 @@ const ZH: Dict = {
   'Already fired at {coord}': '{coord}已经打过了',
   '{ship} at {coord}': '{ship}在{coord}',
   "{ship} doesn't fit at {coord}": '{ship}放不进{coord}',
+  "The 3D board couldn't load on this computer.": '这台电脑无法加载3D棋盘。',
 };
 
 const JA: Dict = {
@@ -64,6 +65,7 @@ const JA: Dict = {
   'Already fired at {coord}': '{coord}は砲撃済み',
   '{ship} at {coord}': '{ship}: {coord}',
   "{ship} doesn't fit at {coord}": '{ship}は{coord}に置けません',
+  "The 3D board couldn't load on this computer.": 'このパソコンでは3Dボードを読み込めませんでした。',
 };
 
 const RU: Dict = {
@@ -91,6 +93,7 @@ const RU: Dict = {
   'Already fired at {coord}': 'По {coord} уже стреляли',
   '{ship} at {coord}': '{ship}: {coord}',
   "{ship} doesn't fit at {coord}": '{ship}: не помещается на {coord}',
+  "The 3D board couldn't load on this computer.": 'Не удалось загрузить 3D-доску на этом компьютере.',
 };
 
 const PT_BR: Dict = {
@@ -118,6 +121,7 @@ const PT_BR: Dict = {
   'Already fired at {coord}': 'Você já atirou em {coord}',
   '{ship} at {coord}': '{ship}: {coord}',
   "{ship} doesn't fit at {coord}": '{ship}: não cabe em {coord}',
+  "The 3D board couldn't load on this computer.": 'Não foi possível carregar o tabuleiro 3D neste computador.',
 };
 
 const ES: Dict = {
@@ -130,7 +134,7 @@ const ES: Dict = {
   'Hide your fleet, then take turns firing.': 'Esconde tu flota y luego disparad por turnos.',
   'Drag ships onto your waters. Click one to turn it.': 'Arrastra los barcos a tus aguas. Haz clic en uno para girarlo.',
   'Fleet setup. Keys 1 to 5 pick a ship, arrows move it, R rotates, Enter places it.': 'Despliegue de la flota. Las teclas 1 a 5 eligen un barco, las flechas lo mueven, R lo gira, Enter lo coloca.',
-  'Fleet Battle board. Arrow keys aim at the enemy waters, Enter fires.': 'Tablero de Batalla naval. Las flechas apuntan a las aguas enemigas, Enter dispara.',
+  'Fleet Battle board. Arrow keys aim at the enemy waters, Enter fires.': 'Tablero de Batalla de flotas. Las flechas apuntan a las aguas enemigas, Enter dispara.',
   'Your fleet': 'Tu flota',
   "{name}'s waters": 'Aguas de {name}',
   'Hit': 'Tocado',
@@ -145,6 +149,7 @@ const ES: Dict = {
   'Already fired at {coord}': 'Ya disparaste a {coord}',
   '{ship} at {coord}': '{ship}: {coord}',
   "{ship} doesn't fit at {coord}": '{ship}: no cabe en {coord}',
+  "The 3D board couldn't load on this computer.": 'No se pudo cargar el tablero 3D en este equipo.',
 };
 
 const IT: Dict = {
@@ -172,6 +177,7 @@ const IT: Dict = {
   'Already fired at {coord}': 'Hai già sparato su {coord}',
   '{ship} at {coord}': '{ship}: {coord}',
   "{ship} doesn't fit at {coord}": '{ship}: non entra in {coord}',
+  "The 3D board couldn't load on this computer.": 'Impossibile caricare il tabellone 3D su questo computer.',
 };
 
 export const TABLETOP_3D = { zh: ZH, ja: JA, ru: RU, 'pt-BR': PT_BR, es: ES, it: IT } as const;

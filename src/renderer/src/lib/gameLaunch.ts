@@ -160,6 +160,31 @@ async function maybeOfferSkinSetup(): Promise<void> {
 }
 
 /**
+ * Drop every board-game panel that holds no live game (a launch card, or a
+ * finished game's result screen), except `keep`'s. ChatScreen shows chess,
+ * Four in a Row and Fleet Battle ahead of the other surfaces, so a stale one
+ * left open hides whatever the player just picked. A live game is never
+ * touched: the cross-launch confirm ends it first.
+ */
+export function dropIdleBoardPanels(characterId: string, keep?: LaunchGameId): void {
+  if (keep !== 'chess') {
+    const chess = useChessStore.getState();
+    const g = chess.games[characterId];
+    if (!g || g.status === 'ended') void chess.end(characterId);
+  }
+  if (keep !== 'CONNECT4') {
+    const c4 = useConnect4Store.getState();
+    const g = c4.games[characterId];
+    if ((g || c4.panelIntent[characterId]) && (!g || g.status === 'ended')) void c4.end(characterId);
+  }
+  if (keep !== 'BATTLESHIP') {
+    const bs = useBattleshipStore.getState();
+    const g = bs.games[characterId];
+    if ((g || bs.panelIntent[characterId]) && (!g || g.status === 'ended')) void bs.end(characterId);
+  }
+}
+
+/**
  * Open a game's surface in the chat game area (the picker tile action).
  * Clears the OTHER surfaces' open-intent first so the single aside swaps to
  * the requested game instead of staying on a stale panel (chess has top
@@ -172,12 +197,10 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
   if (gameId === 'backseat') return;
 
   // Draw! is a full-page route of its own rather than a panel in the chat
-  // game area, so it navigates instead of mounting an aside. Any stale chess
+  // game area, so it navigates instead of mounting an aside. Any stale board
   // panel intent is dropped first so returning to chat later is clean.
   if (gameId === 'draw') {
-    const chess = useChessStore.getState();
-    const g = chess.games[characterId];
-    if (!g || g.status === 'ended') void chess.end(characterId);
+    dropIdleBoardPanels(characterId);
     useMcDashboardStore.getState().setLaunch(characterId, false);
     useUiStore.getState().navigate({ kind: 'draw', characterId });
     return;
@@ -189,12 +212,10 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
   const bn = useBattleshipStore.getState();
   const dash = useMcDashboardStore.getState();
 
-  if (gameId !== 'chess') {
-    // Drop a gameless chess panel (launch card) or a finished game's result
-    // screen; an ACTIVE game never reaches here un-ended.
-    const g = chess.games[characterId];
-    if (!g || g.status === 'ended') void chess.end(characterId);
-  }
+  // Drop a gameless board panel (launch card) or a finished game's result
+  // screen of every OTHER board game; an ACTIVE game never reaches here
+  // un-ended.
+  dropIdleBoardPanels(characterId, gameId);
   if (!isBotGame(gameId)) dash.setLaunch(characterId, false);
 
   if (gameId === 'chess') {

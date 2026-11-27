@@ -36,6 +36,8 @@ import { useUiStore, type View } from '../lib/stores/useUiStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
+import { useConnect4Store, isCONNECT4Open } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore, isBATTLESHIPOpen } from '../lib/stores/useBattleshipStore';
 import { useDrawStore } from '../lib/stores/useDrawStore';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { GAMES } from '../lib/games';
@@ -68,7 +70,7 @@ const TILE_VIEWS = new Set<View['kind']>([
   'coming-soon',
 ]);
 
-type AwayGame = { characterId: string; game: 'chess' | 'draw' };
+type AwayGame = { characterId: string; game: 'chess' | 'draw' | 'CONNECT4' | 'BATTLESHIP' };
 
 /** Live draw game worth a tile: a real game in play, not setup or the gallery. */
 function isDrawLive(phase: string | undefined): boolean {
@@ -120,6 +122,8 @@ export function MiniTile(): React.ReactElement | null {
   const characters = useDataStore((s) => s.characters);
   const summons = useDataStore((s) => s.summons);
   const chessState = useChessStore((s) => s);
+  const connect4State = useConnect4Store((s) => s);
+  const battleshipState = useBattleshipStore((s) => s);
   const drawGames = useDrawStore((s) => s.games);
   const mcLaunch = useMcDashboardStore((s) => s.launch);
   const bottom = useComposerClearance(
@@ -136,9 +140,16 @@ export function MiniTile(): React.ReactElement | null {
   // Draw! game is its own route.
   let away: AwayGame | null = null;
   for (const c of characters) {
-    if (chessState.games[c.id]) {
+    const board: AwayGame['game'] | null = chessState.games[c.id]
+      ? 'chess'
+      : connect4State.games[c.id]
+        ? 'CONNECT4'
+        : battleshipState.games[c.id]
+          ? 'BATTLESHIP'
+          : null;
+    if (board) {
       if (!(view.kind === 'chat' && view.characterId === c.id)) {
-        away = { characterId: c.id, game: 'chess' };
+        away = { characterId: c.id, game: board };
         break;
       }
     } else if (isDrawLive(drawGames[c.id]?.phase)) {
@@ -154,6 +165,8 @@ export function MiniTile(): React.ReactElement | null {
     viewedId !== null &&
     (isChessOpen(chessState, viewedId) ||
       isChessReplayOpen(chessState, viewedId) ||
+      isCONNECT4Open(connect4State, viewedId) ||
+      isBATTLESHIPOpen(battleshipState, viewedId) ||
       summons[viewedId]?.kind === 'online' ||
       mcLaunch[viewedId] != null);
   // A game surface on view already shows the call cluster in its own chrome

@@ -54,6 +54,8 @@ import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
 import { useBrowseStore } from '../lib/stores/useBrowseStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useChessStore } from '../lib/stores/useChessStore';
+import { useConnect4Store } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore } from '../lib/stores/useBattleshipStore';
 import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { pickPalette } from '../lib/portraitPalettes';
 import { portraitSrc } from '../lib/portraitSrc';
@@ -173,6 +175,9 @@ export interface ActivityBadgeStores {
   callParticipants: readonly string[];
   /** useChessStore.games — characterId → last game snapshot (or null). */
   chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
+  /** useConnect4Store.games / useBattleshipStore.games, same meaning as chess. */
+  connect4Games?: Readonly<Record<string, { status: string } | null | undefined>>;
+  battleshipGames?: Readonly<Record<string, { status: string } | null | undefined>>;
   /** useDataStore.summons — characterId → bot status (absent = not summoned).
    * The authoritative "online MC bot session" signal; the mc dashboard
    * store's snapshots are telemetry keyed off this same session. */
@@ -194,10 +199,12 @@ export function avatarActivityBadge(
     s.callParticipants.includes(characterId);
   if (onCall) return 'call';
   const chess = s.chessGames[characterId];
-  const chessLive = chess != null && chess.status !== 'ended';
+  const live = (g: { status: string } | null | undefined): boolean => g != null && g.status !== 'ended';
+  const boardLive =
+    live(chess) || live(s.connect4Games?.[characterId]) || live(s.battleshipGames?.[characterId]);
   const mcOnline = s.summons[characterId]?.kind === 'online';
   const watching = s.backseat?.[characterId] === true;
-  return chessLive || mcOnline || watching ? 'game' : null;
+  return boardLive || mcOnline || watching ? 'game' : null;
 }
 
 /**
@@ -319,6 +326,8 @@ export function IconRail(): React.ReactElement {
   const callStatus = useVoiceStore((s) => s.status);
   const callParticipants = useVoiceStore((s) => s.participants);
   const chessGames = useChessStore((s) => s.games);
+  const connect4Games = useConnect4Store((s) => s.games);
+  const battleshipGames = useBattleshipStore((s) => s.games);
   const backseatActive = useBackseatStore((s) => s.active);
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
@@ -426,6 +435,8 @@ export function IconRail(): React.ReactElement {
                 callStatus,
                 callParticipants,
                 chessGames,
+                connect4Games,
+                battleshipGames,
                 summons,
                 backseat: backseatActive,
               })}

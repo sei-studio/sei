@@ -68,6 +68,7 @@ import {
   __setBattleshipTestHooks,
   __resetBattleshipForTests,
 } from './battleshipService';
+import { loadConfig } from '../configStore';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -311,6 +312,31 @@ describe('Fleet Battle placement', () => {
     await waitFor(() => state().status === 'active');
     expect(state().aiTurnFailed).toBeNull();
     expect(state().aiFleet).toBe('ready');
+  });
+
+  it('a config read that throws fails the placement (then Try again), never a turn stuck on thinking', async () => {
+    vi.mocked(loadConfig).mockRejectedValue(new Error('config unreadable'));
+    try {
+      await startBATTLESHIP(CHAR);
+      await placeFleet(CHAR, PLAYER_FLEET);
+      await waitFor(() => state().aiTurnFailed);
+      expect(state().aiFleet).toBe('failed');
+      expect(state().aiThinking).toBe(false);
+    } finally {
+      vi.mocked(loadConfig).mockImplementation(async () => ({ preferred_name: 'Player' }) as never);
+    }
+  });
+
+  it('a chat reply after a failed turn knows it failed and points at Try again', async () => {
+    reply = () => ({ content: [text('Let me think.')] });
+    await startBATTLESHIP(CHAR);
+    await placeFleet(CHAR, PLAYER_FLEET);
+    await waitFor(() => state().aiTurnFailed);
+    calls = [];
+    reply = () => ({ content: [text('Ugh, something broke.')] });
+    await handlePlayerChat({ characterId: CHAR, text: 'ready?' });
+    const sent = JSON.stringify(calls[0].messages);
+    expect(sent).toContain('they can press Try again');
   });
 
   it('resign is allowed during placement', async () => {

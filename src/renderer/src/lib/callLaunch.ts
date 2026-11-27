@@ -19,12 +19,15 @@ import { useUiStore } from './stores/useUiStore';
 import { useVoiceStore } from './stores/useVoiceStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore, isChessOpen } from './stores/useChessStore';
+import { useConnect4Store, isCONNECT4Open } from './stores/useConnect4Store';
+import { useBattleshipStore, isBATTLESHIPOpen } from './stores/useBattleshipStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useDrawStore, isDrawActive } from './stores/useDrawStore';
 import { isVoiceModelReady } from './voice/modelPrefetch';
 
 /**
- * True when this character has an open game surface: chess panel or game,
+ * True when this character has an open game surface: a chess, Four in a Row
+ * or Fleet Battle panel or game,
  * Minecraft bot online (dashboard) or the launch panel open, or a Draw! game in
  * play (its full-page route carries the same bottom chrome, 260729).
  *
@@ -36,6 +39,8 @@ import { isVoiceModelReady } from './voice/modelPrefetch';
  */
 export function isGameSurfaceOpen(characterId: string): boolean {
   if (isChessOpen(useChessStore.getState(), characterId)) return true;
+  if (isCONNECT4Open(useConnect4Store.getState(), characterId)) return true;
+  if (isBATTLESHIPOpen(useBattleshipStore.getState(), characterId)) return true;
   if (useDataStore.getState().summons[characterId]?.kind === 'online') return true;
   if (isDrawActive(useDrawStore.getState(), characterId)) return true;
   return useMcDashboardStore.getState().launch[characterId] != null;

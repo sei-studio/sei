@@ -32,6 +32,7 @@ import { Button } from '../Button';
 import { FlagIcon } from '../icons';
 import type { BATTLESHIPResult } from '@shared/battleshipIpc';
 import { FleetBoard3D } from './FleetBoard3D';
+import { SceneBoundary, SceneFailedNotice } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
 
 export interface BattleshipPanelProps {
@@ -72,12 +73,15 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   const rematch = useBattleshipStore((s) => s.rematch);
   const retry = useBattleshipStore((s) => s.retry);
   const hydrate = useBattleshipStore((s) => s.hydrate);
+  const endGame = useBattleshipStore((s) => s.end);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const name = character?.name ?? t('Companion');
 
   const [startErr, setStartErr] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
+  /** The 3D scene could not start, or lost its WebGL context. */
+  const [sceneFailed, setSceneFailed] = useState(false);
   const [rematching, setRematching] = useState(false);
 
   // Resume any game main still holds (navigation away and back, relaunch).
@@ -89,6 +93,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   useEffect(() => {
     setStartErr(null);
     setConfirmResign(false);
+    setSceneFailed(false);
     setRematching(false);
   }, [characterId]);
 
@@ -120,14 +125,19 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
     <div className={hud.panel} aria-label={t('Fleet Battle with {name}', { name })}>
       <div className={hud.stage}>
         <div className={hud.boardFill}>
-          <FleetBoard3D
-            game={showLaunch ? null : game}
-            companionName={name}
-            onFire={(row, col) => move(characterId, row, col)}
-            onPlaceFleet={(ships) => placeFleet(characterId, ships)}
-            onRetry={() => void retry(characterId)}
-          />
+          <SceneBoundary key={characterId} onFail={() => setSceneFailed(true)}>
+            <FleetBoard3D
+              key={characterId}
+              game={showLaunch ? null : game}
+              companionName={name}
+              onFire={(row, col) => move(characterId, row, col)}
+              onPlaceFleet={(ships) => placeFleet(characterId, ships)}
+              onRetry={() => void retry(characterId)}
+              onSceneLost={setSceneFailed}
+            />
+          </SceneBoundary>
         </div>
+        {sceneFailed ? <SceneFailedNotice onClose={() => void endGame(characterId)} /> : null}
 
         {showLaunch ? (
           <div className={hud.launch}>

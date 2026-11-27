@@ -21,6 +21,8 @@ import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChessStore } from '../lib/stores/useChessStore';
+import { useConnect4Store } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore } from '../lib/stores/useBattleshipStore';
 import { useDrawStore } from '../lib/stores/useDrawStore';
 import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { useAvatarStore } from '../lib/stores/useAvatarStore';
@@ -57,6 +59,8 @@ export function CallOverlayPusher(): null {
   const callMuted = useUiStore((s) => s.callMuted);
   const lang = useLangStore((s) => s.lang);
   const chessGames = useChessStore((s) => s.games);
+  const connect4Games = useConnect4Store((s) => s.games);
+  const battleshipGames = useBattleshipStore((s) => s.games);
   const drawGames = useDrawStore((s) => s.games);
   const backseatActive = useBackseatStore((s) => s.active);
   const summons = useDataStore((s) => s.summons);
@@ -67,10 +71,12 @@ export function CallOverlayPusher(): null {
   // activeGameFor/avatarActivityBadge, inlined over subscribed slices so a
   // game starting/ending re-pushes.
   const activityIds = [
-    ...Object.keys(chessGames).filter((id) => {
-      const g = chessGames[id];
-      return g != null && g.status !== 'ended';
-    }),
+    ...[chessGames, connect4Games, battleshipGames].flatMap((games) =>
+      Object.keys(games).filter((id) => {
+        const g = games[id];
+        return g != null && g.status !== 'ended';
+      }),
+    ),
     ...Object.keys(drawGames).filter((id) => {
       const g = drawGames[id];
       return g != null && g.phase !== 'gallery' && g.phase !== 'setup';

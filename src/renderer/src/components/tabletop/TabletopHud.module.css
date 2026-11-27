@@ -566,3 +566,28 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* SceneGuard: the scene could not start or lost its WebGL context. Nothing
+   is drawn behind it, so it uses the app's own surface and text tokens. */
+.sceneFailed {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-lg) var(--game-chrome-h, 56px);
+  box-sizing: border-box;
+  background: var(--bg2);
+  text-align: center;
+  flex-wrap: wrap;
+}
+
+.sceneFailedText {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}

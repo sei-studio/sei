@@ -36,6 +36,8 @@ import { useUiStore } from '../../lib/stores/useUiStore';
 import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { useChessStore, isChessOpen } from '../../lib/stores/useChessStore';
+import { useConnect4Store, isCONNECT4Open } from '../../lib/stores/useConnect4Store';
+import { useBattleshipStore, isBATTLESHIPOpen } from '../../lib/stores/useBattleshipStore';
 import { useMcDashboardStore } from '../../lib/stores/useMcDashboardStore';
 import { useDrawStore, isDrawActive } from '../../lib/stores/useDrawStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
@@ -51,6 +53,8 @@ export function CallMiniBar(): React.ReactElement {
   const micBlocked = useVoiceStore((s) => s.micBlocked !== null);
   const summons = useDataStore((s) => s.summons);
   const chessState = useChessStore((s) => s);
+  const connect4State = useConnect4Store((s) => s);
+  const battleshipState = useBattleshipStore((s) => s);
   const mcDashState = useMcDashboardStore((s) => s);
   const drawState = useDrawStore((s) => s);
   const backseatActive = useBackseatStore((s) => s.active);
@@ -61,14 +65,16 @@ export function CallMiniBar(): React.ReactElement {
   const callExists = participants.length > 0 && (status === 'live' || status === 'connecting');
   const awayFromCall = callExists && view.kind !== 'voice-call';
 
-  // Any OPEN game surface among the call's participants (chess panel or a
-  // game, the Minecraft dashboard or launch panel, a Draw! game in play, a
+  // Any OPEN game surface among the call's participants (a chess, Four in a
+  // Row or Fleet Battle panel or game, the Minecraft dashboard or launch panel, a Draw! game in play, a
   // backseat session). Surface-open (not game-live) on purpose: a resigned
   // chess game still shows its result screen, and the call should only
   // reclaim the screen once the surface is actually gone (the unified end
   // "x").
   const gameActive = participants.some((id) => {
     if (isChessOpen(chessState, id)) return true;
+    if (isCONNECT4Open(connect4State, id)) return true;
+    if (isBATTLESHIPOpen(battleshipState, id)) return true;
     if (isDrawActive(drawState, id)) return true;
     if (backseatActive[id] === true) return true;
     const online = summons[id]?.kind === 'online';

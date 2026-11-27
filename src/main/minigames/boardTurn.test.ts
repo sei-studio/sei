@@ -116,3 +116,21 @@ describe('attemptBudgetMs', () => {
     expect(attemptBudgetMs({ kind: 'ollama' })).toBeGreaterThanOrEqual(240_000);
   });
 });
+
+describe('replayableContent', () => {
+  it('turns an empty reply into a placeholder the API accepts', async () => {
+    const { replayableContent } = await import('./boardTurn');
+    expect(replayableContent([])).toEqual([{ type: 'text', text: '(no reply)' }]);
+    expect(replayableContent([{ type: 'text', text: '  \n ', citations: null } as never])).toEqual([
+      { type: 'text', text: '(no reply)' },
+    ]);
+  });
+
+  it('drops blank text blocks and keeps the rest', async () => {
+    const { replayableContent } = await import('./boardTurn');
+    const tool = { type: 'tool_use', id: 't1', name: 'drop', input: { column: 3 } };
+    expect(replayableContent([{ type: 'text', text: ' ' } as never, tool as never])).toEqual([tool]);
+    const said = { type: 'text', text: 'hmm' };
+    expect(replayableContent([said as never])).toEqual([said]);
+  });
+});

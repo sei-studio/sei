@@ -47,6 +47,7 @@ import { PercentBar } from '../PercentBar';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { FlipIcon, DrawIcon, FlagIcon } from '../icons';
 import { ChessBoard3D } from './ChessBoard3D';
+import { SceneBoundary, SceneFailedNotice } from '../tabletop/SceneGuard';
 import { useAiMoveReveal } from './useAiMoveReveal';
 import { capturedMaterial } from './chessUtil';
 import { Piece } from './pieces';
@@ -113,6 +114,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const respondDraw = useChessStore((s) => s.respondDraw);
   const setUi = useChessStore((s) => s.setUi);
   const hydrate = useChessStore((s) => s.hydrate);
+  const endGame = useChessStore((s) => s.end);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const name = character?.name ?? t('Companion');
@@ -121,6 +123,8 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   const [startErr, setStartErr] = useState<string | null>(null);
   const [mcConflict, setMcConflict] = useState(false);
   const [confirmResign, setConfirmResign] = useState(false);
+  /** The 3D scene could not start, or lost its WebGL context. */
+  const [sceneFailed, setSceneFailed] = useState(false);
   /** Rematch clicked on a finished game: show the launch layout again. */
   const [rematchScreen, setRematchScreen] = useState(false);
 
@@ -137,6 +141,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
     setMcConflict(false);
     setConfirmResign(false);
     setRematchScreen(false);
+    setSceneFailed(false);
   }, [characterId]);
 
   // A fresh game went live (Start pressed on the rematch screen, or any other
@@ -316,8 +321,11 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
         /* ── Board states: full-bleed 3D scene + floating HUD ── */
         <div className={styles.stage}>
           <div className={styles.boardFill}>
-            <ChessBoard3D characterId={characterId} companionName={name} />
+            <SceneBoundary key={characterId} onFail={() => setSceneFailed(true)}>
+              <ChessBoard3D characterId={characterId} companionName={name} onSceneLost={setSceneFailed} />
+            </SceneBoundary>
           </div>
+          {sceneFailed ? <SceneFailedNotice onClose={() => void endGame(characterId)} /> : null}
 
           <div className={styles.hud}>
             {/* Top-left: icon controls (active games only) stacked above the

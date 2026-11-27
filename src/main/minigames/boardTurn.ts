@@ -198,6 +198,21 @@ export function buildGameThread(
   return rows.sort((a, b) => a.ts - b.ts);
 }
 
+/**
+ * A model reply made fit to send back as an assistant turn. Anthropic rejects
+ * (400) an assistant message with no content or a whitespace-only text block,
+ * and a reply can be exactly that (an empty answer before the nudge hop).
+ * Blank text blocks are dropped; a reply left with nothing becomes a short
+ * placeholder the model reads as its own silence.
+ */
+export function replayableContent(
+  content: readonly Anthropic.Messages.ContentBlock[],
+): Anthropic.Messages.ContentBlockParam[] {
+  const kept = content.filter((b) => b.type !== 'text' || b.text.trim().length > 0);
+  if (kept.length) return kept as Anthropic.Messages.ContentBlockParam[];
+  return [{ type: 'text', text: '(no reply)' }];
+}
+
 function truncate(text: string, max = 300): string {
   return text.length <= max ? text : `${text.slice(0, max)}...`;
 }
@@ -247,6 +262,9 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
   // would never settle. Every call is raced against this.
   const deadline = new Promise<never>((_, reject) => {
     deadlineTimer = setTimeout(() => {
+      // Mark first: the abort wakes stale(), which must read it as a timeout
+      // (retried), not as the turn being superseded.
+      timedOut = true;
       try { ctrl.abort(); } catch { /* already done */ }
       reject(new BoardTurnTimeout(budget));
     }, budget);
@@ -330,7 +348,7 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
       if (!toolUses.length) {
         if ((a.kind === 'move' || a.kind === 'place') && a.noMoveNudge && hop + 1 < a.maxHops) {
           noToolHops++;
-          messages.push({ role: 'assistant', content: res.content });
+          messages.push({ role: 'assistant', content: replayableContent(res.content) });
           messages.push({ role: 'user', content: a.noMoveNudge });
           continue;
         }
@@ -338,7 +356,7 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
         break;
       }
 
-      messages.push({ role: 'assistant', content: res.content });
+      messages.push({ role: 'assistant', content: replayableContent(res.content) });
       const results: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {
         let out: ToolOutcome;

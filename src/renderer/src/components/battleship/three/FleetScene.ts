@@ -130,6 +130,16 @@ interface Flicker {
   base: THREE.Vector3;
 }
 
+/** One shot marker, kept across pushes while its cell and host stay the same. */
+interface PegEntry {
+  value: 'miss' | 'hit' | 'sunk';
+  /** The ship whose deck it rides, or null on open water. */
+  host: ShipEntry | null;
+  obj: THREE.Group;
+  ripple: THREE.Mesh | null;
+  flickers: Flicker[];
+}
+
 function hash(r: number, c: number, salt = 0): number {
   const x = Math.sin((r + 1) * 12.9898 + (c + 1) * 78.233 + salt * 37.719) * 43758.5453;
   return x - Math.floor(x);
@@ -186,6 +196,7 @@ export class FleetScene {
   private endShift = { from: 0, to: 0, start: -Infinity };
   private fx: Fx[] = [];
   private flickers: Flicker[] = [];
+  private readonly pegs = new Map<string, PegEntry>();
   private pegDrops: Array<{ obj: THREE.Object3D; y: number; start: number; delay: number }> = [];
   private heldDock: BATTLESHIPShipName | null = null;
   private thinking: { pos: GridPos; x: number; z: number; nextAt: number } | null = null;
@@ -407,8 +418,8 @@ export class FleetScene {
       this.updateSlick(ent);
     }
 
-    // Shots: rebuild pegs, animate the ones that are new since last time.
-    this.rebuildMarkers(view, anim, now);
+    // Shots: diff the pegs; only the new ones drop in.
+    this.syncMarkers(view, anim, now);
     this.known = { player: cloneCells(view.playerCells), enemy: cloneCells(view.enemyCells) };
 
     if (view.lastAiShot && view.phase === 'battle') {
@@ -674,13 +685,13 @@ export class FleetScene {
 
   // ── Markers ────────────────────────────────────────────────────────────────
 
-  private rebuildMarkers(view: FleetView, anim: boolean, now: number): void {
-    for (const child of [...this.markerRoot.children]) this.markerRoot.remove(child);
-    for (const ent of this.shipMap.values()) for (const child of [...ent.deck.children]) ent.deck.remove(child);
-    this.flickers = [];
-    this.pegDrops = this.pegDrops.filter(() => false);
-    if (view.phase !== 'battle') return;
-
+  /**
+   * Shot markers follow the cells. A peg whose cell, value and host ship are
+   * unchanged is kept as it is (mid-drop, flames and all), so a push that
+   * arrives during a drop, like the "thinking" push right after a shot, never
+   * cuts its animation. Only pegs for newly shot cells drop in.
+   */
+  private syncMarkers(view: FleetView, anim: boolean, now: number): void {
     const shipOn = (board: BoardId, r: number, c: number): { ent: ShipEntry; seg: number } | null => {
       for (const ent of this.shipMap.values()) {
         if (ent.board !== board) continue;
@@ -690,21 +701,30 @@ export class FleetScene {
       return null;
     };
 
+    const want = new Set<string>();
     let stagger = 0;
-    for (const board of ['player', 'enemy'] as BoardId[]) {
+    let lit = false;
+    for (const board of view.phase === 'battle' ? (['player', 'enemy'] as BoardId[]) : []) {
       const cells = board === 'player' ? view.playerCells : view.enemyCells;
       const prev = this.known[board];
       for (let r = 0; r < N; r++) {
         for (let c = 0; c < N; c++) {
           const v = cells[r]?.[c];
           if (v !== 'miss' && v !== 'hit' && v !== 'sunk') continue;
+          const key = `${board}:${r}:${c}`;
+          want.add(key);
+          const onShip = v !== 'miss' ? shipOn(board, r, c) : null;
+          const cur = this.pegs.get(key);
+          if (cur && cur.value === v && cur.host === (onShip?.ent ?? null)) continue;
+          if (cur) this.removePeg(key, cur);
+
           const was = prev?.[r]?.[c];
           const isNew = anim && prev !== null && (was === 'empty' || was === 'ship' || was === undefined);
-          const onShip = v !== 'miss' ? shipOn(board, r, c) : null;
           const peg = new THREE.Group();
           const pegMesh = new THREE.Mesh(this.pegGeo, v === 'miss' ? this.matPegMiss : this.matPegHit);
           pegMesh.castShadow = true;
           peg.add(pegMesh);
+          const entry: PegEntry = { value: v, host: onShip?.ent ?? null, obj: peg, ripple: null, flickers: [] };
           let restY: number;
           if (onShip) {
             // Ride the deck: local ship frame, length along +x.
@@ -723,8 +743,13 @@ export class FleetScene {
             ripple.rotation.x = -Math.PI / 2;
             ripple.position.set(p.x, WATER_Y + 0.004, p.z);
             this.markerRoot.add(ripple);
+            entry.ripple = ripple;
           }
-          if (v === 'hit' || v === 'sunk') this.addFire(peg, r, c, v === 'sunk');
+          if (v === 'hit' || v === 'sunk') {
+            this.addFire(peg, r, c, v === 'sunk', entry.flickers);
+            lit = true;
+          }
+          this.pegs.set(key, entry);
           if (isNew) {
             const delay = stagger;
             stagger += 120;
@@ -732,19 +757,29 @@ export class FleetScene {
             this.pegDrops.push({ obj: peg, y: restY, start: now, delay });
             const world = new THREE.Vector3();
             const impact = (): void => {
+              if (this.pegs.get(key) !== entry) return; // replaced before it landed
               peg.getWorldPosition(world);
-              if (v === 'miss') this.splash(world, false);
-              else this.splash(world, true);
+              this.splash(world, v !== 'miss');
             };
             this.fx.push({ start: now + delay + 260, dur: 1, update: () => undefined, done: impact });
           }
         }
       }
     }
+    for (const [key, e] of [...this.pegs]) if (!want.has(key)) this.removePeg(key, e);
+    this.flickers = [...this.pegs.values()].flatMap((e) => e.flickers);
+    if (lit) this.poseFlickers(performance.now(), true);
+  }
+
+  private removePeg(key: string, e: PegEntry): void {
+    e.obj.removeFromParent();
+    e.ripple?.removeFromParent();
+    this.pegDrops = this.pegDrops.filter((d) => d.obj !== e.obj);
+    this.pegs.delete(key);
   }
 
   /** A little flame + smoke on a hit peg; sunk ships only smoulder. */
-  private addFire(peg: THREE.Group, r: number, c: number, smoulder: boolean): void {
+  private addFire(peg: THREE.Group, r: number, c: number, smoulder: boolean, out: Flicker[]): void {
     const top = 0.42;
     if (!smoulder) {
       const flame = new THREE.Mesh(this.flameGeo, this.matFlame);
@@ -752,17 +787,16 @@ export class FleetScene {
       const core = new THREE.Mesh(this.flameCoreGeo, this.matFlameCore);
       core.position.set(0, top - 0.02, 0);
       peg.add(flame, core);
-      this.flickers.push({ obj: flame, kind: 'flame', phase: hash(r, c, 1) * 10, base: flame.position.clone() });
-      this.flickers.push({ obj: core, kind: 'flame', phase: hash(r, c, 2) * 10 + 3, base: core.position.clone() });
+      out.push({ obj: flame, kind: 'flame', phase: hash(r, c, 1) * 10, base: flame.position.clone() });
+      out.push({ obj: core, kind: 'flame', phase: hash(r, c, 2) * 10 + 3, base: core.position.clone() });
     }
     const puffs = smoulder ? 2 : 2;
     for (let i = 0; i < puffs; i++) {
       const puff = new THREE.Mesh(this.puffGeo, this.matSmoke);
       puff.position.set(0, top + 0.1, 0);
       peg.add(puff);
-      this.flickers.push({ obj: puff, kind: 'smoke', phase: hash(r, c, 5 + i) + i * 0.5, base: puff.position.clone() });
+      out.push({ obj: puff, kind: 'smoke', phase: hash(r, c, 5 + i) + i * 0.5, base: puff.position.clone() });
     }
-    this.poseFlickers(performance.now(), true);
   }
 
   /** Splash (miss) or burst (hit) at a world point. Transient, self-cleaning. */

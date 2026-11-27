@@ -20,6 +20,7 @@ import { useT } from '../../lib/i18n';
 import type { CONNECT4Color, CONNECT4GameState } from '@shared/connect4Ipc';
 import { Connect4Scene } from './three/Connect4Scene';
 import { COLS, ROWS, landingRow, winningCells, type Board } from './connect4Util';
+import { watchWebglContext } from '../tabletop/SceneGuard';
 import hud from '../tabletop/TabletopHud.module.css';
 
 export interface Connect4Board3DProps {
@@ -29,6 +30,8 @@ export interface Connect4Board3DProps {
   onDrop?: (column: number) => Promise<boolean> | void;
   /** Run the character's failed turn again (shown when aiTurnFailed is set). */
   onRetry?: () => void;
+  /** The WebGL context was lost (true) or came back (false). */
+  onSceneLost?: (lost: boolean) => void;
 }
 
 const EMPTY_BOARD: Board = Array.from({ length: ROWS }, () => Array<CONNECT4Color | null>(COLS).fill(null));
@@ -37,7 +40,13 @@ export function colorName(c: CONNECT4Color): string {
   return c === 'r' ? 'Red' : 'Yellow';
 }
 
-export function Connect4Board3D({ game, companionName, onDrop, onRetry }: Connect4Board3DProps): React.ReactElement {
+export function Connect4Board3D({
+  game,
+  companionName,
+  onDrop,
+  onRetry,
+  onSceneLost,
+}: Connect4Board3DProps): React.ReactElement {
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<Connect4Scene | null>(null);
@@ -92,6 +101,14 @@ export function Connect4Board3D({ game, companionName, onDrop, onRetry }: Connec
       s.dispose();
       setScene(null);
     };
+  }, []);
+
+  const lostRef = useRef(onSceneLost);
+  lostRef.current = onSceneLost;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    return watchWebglContext(el, (lost) => lostRef.current?.(lost));
   }, []);
 
   useEffect(() => {
