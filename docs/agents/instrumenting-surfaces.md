@@ -484,7 +484,8 @@ reply_latency starts at the first utterance, so nothing timed the dial. The
 dialed companion's `voice_call_ended` now carries, as integer ms from the
 Call press (`startCall`'s dialStart), each absent when the call never got
 there: `connect_mic_permission_ms`, `connect_setup_reads_ms` (config,
-ElevenLabs key status, speech pack status), `connect_mic_open_ms`
+ElevenLabs key status, speech pack status; since T571 the three go out
+together), `connect_mic_open_ms`
 (getUserMedia; the ring starts here), `connect_stt_ready_ms` (local model
 when the policy boots one, plus the capture graph), `connect_greet_request_ms`
 (main's wall-clock stamp of the greeting's LLM request, app greetings only,

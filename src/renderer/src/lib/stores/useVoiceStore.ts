@@ -2277,7 +2277,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // back to English rather than blocking the dial.
       // 260725: the same read feeds the STT policy (sttPolicy.ts) — whether the
       // local Whisper worker boots at all, and whether cloud Scribe is wired.
-      const callCfg = await sei.getConfig().catch(() => null);
+      // 261128 (T571): this read and the two status reads below are
+      // independent, so all three go out together and are awaited in order
+      // (one round trip to main instead of three). Each keeps its own
+      // fallback, exactly as when they ran one after another.
+      const callCfgRead = sei.getConfig().catch(() => null);
+      const elevenKeyRead = (async () => (await sei.voiceElevenKeyStatus?.())?.present === true)();
+      const speechPackRead = (async () => sei.speechPackStatus?.())();
+      // Settled below; until then a rejection is not unhandled.
+      elevenKeyRead.catch(() => {});
+      speechPackRead.catch(() => {});
+      const callCfg = await callCfgRead;
       if (session !== mySession) return;
       // 261116: the player's language (chat_language, else the UI language).
       const chatLanguage = userChatLanguage(callCfg);
@@ -2290,7 +2300,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // cost of counting it here is only whole-clip playback, dev-only.)
       let elevenKeyPresent = false;
       try {
-        elevenKeyPresent = (await sei.voiceElevenKeyStatus?.())?.present === true;
+        elevenKeyPresent = await elevenKeyRead;
       } catch {
         /* status read failed → assume absent, which only costs streaming */
       }
@@ -2322,7 +2332,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // is the model-missing rule anyway) and the app UI language.
       let sensevoiceReady = false;
       try {
-        const status = await sei.speechPackStatus?.();
+        const status = await speechPackRead;
         sensevoiceReady = status?.packs?.['stt-sensevoice']?.state === 'ready';
       } catch {
         /* absent bridge / failed read → whisper behavior */
