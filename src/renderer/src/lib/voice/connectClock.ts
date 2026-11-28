@@ -26,9 +26,9 @@ export interface CallConnectClockDeps {
 export interface CallConnectClock {
   /** The Call press: a fresh call dialing `characterId`. */
   start(characterId: string): void;
-  /** Stamp one renderer-side phase (first stamp wins). `opener_queued_ms`
-   * only counts while the opener is still open (nothing heard yet, the
-   * player has not spoken). */
+  /** Stamp one renderer-side phase (first stamp wins). `opener_tts_ms` and
+   * `opener_queued_ms` only count while the opener is still open (nothing
+   * heard yet, the player has not spoken). */
   mark(phase: Exclude<CallConnectPhase, 'greet_request_ms' | 'connect_ms' | 'first_line_ms'>): void;
   /** Route facts known during setup. */
   note(meta: { greetPath?: CallGreetPath; sttLocal?: CallSttLocal }): void;
@@ -84,7 +84,7 @@ export function createCallConnectClock(deps: CallConnectClockDeps): CallConnectC
       cur = { characterId, t0: deps.now(), wall0: wallNow(), timing: {}, openerOpen: true };
     },
     mark(phase) {
-      if (phase === 'opener_queued_ms' && !cur?.openerOpen) return;
+      if ((phase === 'opener_queued_ms' || phase === 'opener_tts_ms') && !cur?.openerOpen) return;
       stamp(phase);
     },
     note(meta) {
