@@ -1257,6 +1257,10 @@ function turnBlock(
           : 'Whose turn: theirs. You do not move until they do.',
     );
     lines.push(connect4ChatFacts(s.board, { ai, player: P, me: M }));
+    // T568: told "col 6 is full" (it had two spaces left), Sui agreed and
+    // took back a correct tip.
+    const full = Array.from({ length: COLS }, (_, c) => c).filter((c) => s.board[0][c] !== null).map((c) => c + 1);
+    lines.push(`- Full columns: ${full.join(', ') || 'none'}; every other column still takes a piece.`);
     lines.push(`${unansweredNote(playerLines)} Answer them in text, or say nothing.`);
     lines.push(SPOKEN_NOW);
   } else if (kind === 'game-over' && s.result) {

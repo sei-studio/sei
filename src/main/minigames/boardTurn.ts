@@ -167,10 +167,11 @@ export interface BoardTurnResult {
 export const SAY_PROPERTY = {
   type: 'string',
   description:
-    'Optional. One short line you say out loud, in your own voice, just BEFORE your move lands, so it can only be ' +
-    'about the moves before this one or a tip. Leave it out on most moves. Never about this move: not where it ' +
-    'goes, what it blocks or what it sets up. No counting of shots, hits, pieces or ships and no list of what is ' +
-    'left beyond what the facts say outright. No cell name or column number, and do not start it with "ok".',
+    'Optional. One short line you say out loud, in your own voice, just BEFORE your move lands. Make it how you ' +
+    'feel about the moves before this one (a groan, a gloat, a tease, the way you would react) or a tip, not a ' +
+    'report of the board: no counting of shots, hits, pieces or ships, no saying what is left, which line or ' +
+    'where, and nothing about this move (where it goes, what it blocks or sets up). Leave it out on most moves. ' +
+    'No cell name or column number, and do not start it with "ok".',
 } as const;
 
 /** Most tokens the reaction hop may write: one short spoken line. */
