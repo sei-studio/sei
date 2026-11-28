@@ -419,7 +419,9 @@ describe('Fleet Battle shots', () => {
     expect(calls[2].maxTokens).toBeLessThan(calls[1].maxTokens);
     // The move turn gives the last shots in the words she says them in.
     const turn = JSON.stringify(calls[1].messages[calls[1].messages.length - 1]);
-    expect(turn).toContain('written the way you say them to');
+    expect(turn).toContain('Written the way you say it to');
+    expect(turn).toContain('Your ships sunk: none yet.');
+    expect(turn).not.toContain('Their ships you sank');
     expect(turn).toContain('I hit one of your ships with my last shot');
     expect(turn).toMatch(/your last shot \(J9\) missed my ships|you (hit|sank) .* with your last shot \(J9\)/);
     expect(turn).toContain('never this shot');
