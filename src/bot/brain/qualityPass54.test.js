@@ -86,7 +86,8 @@ describe('trackItemSources', () => {
     bot.emit('playerCollect', bot.entity, dirt)
     const src = pickupSourcesSince(bot, t0)
     expect(src.get('rotten_flesh')).toEqual({ kind: 'mob', name: 'zombie' })
-    expect(src.has('dirt')).toBe(false)
+    // 261128 (pass 68): an item with no sign of a source was picked up off the ground.
+    expect(src.get('dirt')).toEqual({ kind: 'ground', name: '' })
     expect(pickupSourcesSince(bot, Date.now() + 1000).size).toBe(0)
   })
 

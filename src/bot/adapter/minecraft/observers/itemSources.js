@@ -41,7 +41,8 @@ function dist(a, b) {
 
 /**
  * Where an item that spawned at `pos` came from, or null when the game gives
- * no sign (a broken block, a /give, her own toss).
+ * no sign (a broken block, a /give, her own toss). The tracker below keeps
+ * those as kind 'ground'.
  * @returns {{ kind: 'mob', name: string } | { kind: 'player', name: string } | null}
  */
 export function itemSourceAt(bot, pos, now = Date.now()) {
@@ -82,8 +83,16 @@ export function trackItemSources(bot) {
       try {
         if (!isItem(e) || e.id == null) return
         const now = Date.now()
-        const src = itemSourceAt(bot, e.position, now)
-        if (!src) return
+        // 261128 (quality pass 68): an item with no sign of a mob or a toss
+        // is still one she picked up off the ground (a block someone broke,
+        // her own drop). Untagged, a dirt block her follow walked over hit the
+        // loud inventory banner, whose reasons start with "the player handed
+        // you something", and right after she gave the player 6 logs she
+        // thanked them with "you're the one who gave me the logs" (11-28
+        // scorecard work_session-02; pass68-probe 8/16 with the banner, 3/16
+        // with this line). A /give lands in the inventory without a pickup,
+        // so it still reaches the banner.
+        const src = itemSourceAt(bot, e.position, now) ?? { kind: 'ground', name: '' }
         tags.set(e.id, { ...src, at: now })
         if (tags.size > TAG_MAX) {
           for (const [id, t] of tags) if (now - t.at > TAG_TTL_MS || tags.size > TAG_MAX) tags.delete(id)
@@ -110,7 +119,7 @@ export function trackItemSources(bot) {
  * The source of each item she picked up since `sinceMs`, by item name. An
  * item picked up from two different sources in the window has no single
  * source and is left out.
- * @returns {Map<string, { kind: 'mob'|'player', name: string }>}
+ * @returns {Map<string, { kind: 'mob'|'player'|'ground', name: string }>}
  */
 export function pickupSourcesSince(bot, sinceMs) {
   const out = new Map()

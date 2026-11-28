@@ -710,20 +710,23 @@ export function splitOwnInventoryChanges(deltas, actions, sinceMs, nowMs, opts =
 /**
  * 261113 (pass 54): the gains her pickups explain. Gains she picked up off a
  * mob that died go to `drops` (with `from`); gains a player tossed stay in
- * `other` with `from` set; the rest are unchanged.
+ * `other` with `from` set; 261128 (pass 68): gains she picked up with no
+ * sign of either go to `ground`; the rest are unchanged.
  * @param {Array<{item:string, n:number}>} changes  unexplained deltas
  * @param {Map<string, {kind:string, name:string}>} sources  pickupSourcesSince
  */
 export function attributePickups(changes, sources) {
   const drops = []
+  const ground = []
   const other = []
   for (const d of Array.isArray(changes) ? changes : []) {
     const from = d.n > 0 ? sources?.get?.(d.item) : null
     if (from?.kind === 'mob') drops.push({ ...d, from })
+    else if (from?.kind === 'ground') ground.push({ ...d, from })
     else if (from?.kind === 'player') other.push({ ...d, from })
     else other.push(d)
   }
-  return { drops, other }
+  return { drops, ground, other }
 }
 
 function joinAnd(list) {
@@ -835,7 +838,7 @@ export function createSnapshotComposer({ bot }) {
     // a gift ("thanks for the rotten flesh lol" after her own zombie kill,
     // combat_night 11-12). It leaves the banner for a quiet line naming the
     // mob; a gain the player tossed carries their name. See itemSources.js.
-    const { drops, other: unexplained } = attributePickups(split.other, pickupSourcesSince(bot, prevTickAt == null ? null : prevTickAt - OWN_ACTION_SLACK_MS))
+    const { drops, ground, other: unexplained } = attributePickups(split.other, pickupSourcesSince(bot, prevTickAt == null ? null : prevTickAt - OWN_ACTION_SLACK_MS))
     const cap = 6
     let wornNow = new Set()
     try { wornNow = new Set(wornArmor(bot).map((w) => w.item.name)) } catch { wornNow = new Set() }
@@ -847,6 +850,7 @@ export function createSnapshotComposer({ bot }) {
     const invCapped = capList(unexplained)
     const ownCapped = capList(own)
     const dropsCapped = capList(drops)
+    const groundCapped = capList(ground)
     const dropMobs = [...new Set(drops.map((d) => d.from.name))]
 
     const other = []
@@ -862,7 +866,7 @@ export function createSnapshotComposer({ bot }) {
       other.push(`hp -${prevHp - currHp}`)
     }
 
-    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained, drops, dropsCapped, dropMobs }
+    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained, drops, dropsCapped, dropMobs, ground, groundCapped }
   }
 
   return {
@@ -877,7 +881,7 @@ export function createSnapshotComposer({ bot }) {
       for (const [k, n] of Object.entries(worn)) currInv[k] = (currInv[k] ?? 0) + n
       const currHp = Math.round(bot.health ?? 0)
       const now = Date.now()
-      const { inv, own, ownNames, other, unexplained, drops, dropsCapped, dropMobs } = computeEvents(currInv, currHp, opts.recentActions, now)
+      const { inv, own, ownNames, other, unexplained, drops, dropsCapped, dropMobs, ground, groundCapped } = computeEvents(currInv, currHp, opts.recentActions, now)
       // 261018 (pass 16): items that came in without an action of hers (a
       // gift, a pickup) go to the caller too, so the brain can write them into
       // the conversation record. The banner below is shown on this one
@@ -887,7 +891,7 @@ export function createSnapshotComposer({ bot }) {
       // knocks loose (dirt, cobblestone) also count as unexplained and filled
       // the 12 event lines that recall answers rely on (pass 16 review).
       if (typeof opts.onUnexplainedGains === 'function') {
-        const gains = [...unexplained, ...drops].filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
+        const gains = [...unexplained, ...drops, ...ground].filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
         if (gains.length > 0) { try { opts.onUnexplainedGains(gains) } catch { /* never break a snapshot */ } }
       }
 
@@ -898,7 +902,7 @@ export function createSnapshotComposer({ bot }) {
       diedSinceTick = false
       deaths = new Map()   // drain the death buffer for the next window
 
-      if (inv.length === 0 && own.length === 0 && other.length === 0 && dropsCapped.length === 0) return base
+      if (inv.length === 0 && own.length === 0 && other.length === 0 && dropsCapped.length === 0 && groundCapped.length === 0) return base
       const lines = base.split('\n')
       const invIdx = () => lines.findIndex(l => l.startsWith('inventory ('))
 
@@ -922,13 +926,21 @@ export function createSnapshotComposer({ bot }) {
         else lines.unshift(dropLine)
       }
 
+      // 261128 (pass 68): what she picked up off the ground, quiet too.
+      if (groundCapped.length > 0) {
+        const groundLine = `since last tick you picked up off the ground: ${groundCapped.join(', ')} (already counted on the inventory line above)`
+        const i = invIdx()
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0) + (dropsCapped.length > 0 ? 1 : 0), 0, groundLine)
+        else lines.unshift(groundLine)
+      }
+
       // Inventory changes get a LOUD, dedicated section right under the
       // inventory line — the bot reads inventory there, so a handoff / pickup /
       // drop is impossible to miss, and it knows to act on what just arrived.
       if (inv.length > 0) {
         const invLine = `*** INVENTORY JUST CHANGED ***: ${inv.join(', ')}  <- items entered or left your inventory since last tick (the player handed you something, you picked it up, or you used/dropped it). React to it: equip a new tool, eat new food, build with new blocks. If you were waiting on something you asked for, this is it arriving.`
         const i = invIdx()
-        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0) + (dropsCapped.length > 0 ? 1 : 0), 0, invLine)
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0) + (dropsCapped.length > 0 ? 1 : 0) + (groundCapped.length > 0 ? 1 : 0), 0, invLine)
         else lines.unshift(invLine)
       }
 
