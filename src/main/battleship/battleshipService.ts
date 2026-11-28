@@ -71,6 +71,8 @@ import {
   alreadyMovedResult,
   SAY_PROPERTY,
   chatReplyRule,
+  TEACHING_LEAD,
+  SPOKEN_NOW,
   unansweredNote,
   type BoardToolUse,
   type BoardTurnArgs,
@@ -155,6 +157,8 @@ interface Session {
   spoke: boolean;
   clock: string;
   gameLog: Array<{ ts: number; text: string }>;
+  /** The player's name and the character's, for the move log and the chat facts. */
+  names: { player: string; me: string };
   queue: Queue | null;
   /** Player lines waiting for ONE coalesced reply (id + text: the reply quotes them). */
   chatBuffer: Array<{ id: string; text: string; voiceCall: boolean; resolve: (r: ChatSendResult) => void }>;
@@ -291,6 +295,12 @@ export async function startBATTLESHIP(
 
   const playerStarts = opts?.playerStarts ?? true;
   const rand = randomOverride ?? Math.random;
+  // Read once per game; a failed read only costs the names (the turn's own
+  // config read still fails the turn, see the placement tests).
+  const names = {
+    player: await playerNameOf().catch(() => 'the player'),
+    me: (await getCharacter(characterId).catch(() => null))?.name || 'you',
+  };
   const s: Session = {
     gameId: randomUUID(),
     characterId,
@@ -322,6 +332,7 @@ export async function startBATTLESHIP(
     spoke: false,
     clock: clockNow(),
     gameLog: [],
+    names,
     queue: null,
     chatBuffer: [],
     placeLean: placementLean(rand),
@@ -504,7 +515,7 @@ function maybeBeginBattle(s: Session): void {
   s.turn = s.playerStarts ? 'player' : 'ai';
   s.gameLog.push({
     ts: Date.now(),
-    text: `(game) Both fleets are placed. The battle starts; ${s.playerStarts ? 'they fire' : 'you fire'} first.`,
+    text: `(game) Both fleets are placed. The battle starts; ${s.playerStarts ? `${s.names.player} fires` : 'you fire'} first.`,
   });
   if (s.turn === 'ai') enqueueAiTurn(s);
 }
@@ -751,7 +762,11 @@ async function dispatchChat(s: Session): Promise<void> {
       characterId: s.characterId,
       kind: 'chat-reply',
       contract: await contractBlock(s),
-      turnBlock: turnBlock(s, 'chat-reply', null, { playerLines: entries.map((e) => e.text), player: await playerNameOf() }),
+      turnBlock: turnBlock(s, 'chat-reply', null, {
+        playerLines: entries.map((e) => e.text),
+        player: s.names.player,
+        me: s.names.me,
+      }),
       gameLog: s.gameLog,
       unansweredIds: entries.map((e) => e.id),
       clock: s.clock,
@@ -963,10 +978,23 @@ function applyShot(s: Session, by: 'player' | 'ai', row: number, col: number): B
   s.history.push(rec);
   s.lastActivityAt = Date.now();
   const name = battleshipCellName(row, col);
-  const what = rec.sunkShip ? `hit and sank ${by === 'ai' ? 'their' : 'your'} ${rec.sunkShip}` : rec.hit ? 'hit' : 'miss';
+  const shooter = by === 'ai' ? s.names.me : s.names.player;
+  const targetName = by === 'ai' ? s.names.player : s.names.me;
+  const what = rec.sunkShip ? `hit and sank ${targetName}'s ${rec.sunkShip}` : rec.hit ? 'hit' : 'miss';
   s.gameLog.push({
     ts: Date.now(),
-    text: by === 'ai' ? `(game) You fired at ${name}: ${what}.` : `(game) They fired at ${name}: ${what}.`,
+    // Both sides by name: with "You fired at E4: hit." and "They fired at
+    // F5: hit and sank your battleship." the model had to flip both pronouns
+    // to talk to the player, and told them "they sank my destroyer, you sank
+    // nothing" (3 of 4 characters, T567 probe) or tipped them toward E4, its
+    // own hit on their board.
+    // No cell for its own shots (the move turn lists them): with the cells
+    // in the thread it told the player "your E4 hit is still floating" for
+    // its own hit on the player's ships (T567 probe).
+    text:
+      by === 'ai'
+        ? `(game) ${shooter} fired at ${targetName}'s ships: ${what}.`
+        : `(game) ${shooter} fired at ${name} on ${targetName}'s board: ${what}.`,
   });
   return rec;
 }
@@ -1025,15 +1053,17 @@ async function playerNameOf(): Promise<string> {
   return (config.preferred_name ?? '').trim() || 'the player';
 }
 
-async function contractBlock(_s: Session): Promise<string> {
-  const playerName = await playerNameOf();
+async function contractBlock(s: Session): Promise<string> {
+  const playerName = s.names.player;
+  const me = s.names.me;
   return [
     '# FLEET BATTLE',
     `You are playing a casual game of Fleet Battle against ${playerName} inside the Sei app.`,
     'The rules: each side has a 10x10 board, rows A to J from the top and columns 1 to 10 from the left, with five ' +
       'hidden ships: carrier (5 cells), battleship (4), cruiser (3), submarine (3) and destroyer (2). First each side ' +
-      'places its own ships. Then you take turns firing one shot at a cell on the other board; the shot is a hit or a ' +
-      'miss, and a ship sinks once all its cells are hit. Sink all five of theirs before they sink yours to win.',
+      'places its own ships. Then you take turns firing one shot at a cell on the other board, one shot per turn even ' +
+      'after a hit; the shot is a hit or a miss, and a ship sinks once all its cells are hit. Sink all five of theirs ' +
+      'before they sink yours to win. Ships can sit anywhere, so no part of the board is better than another.',
     'You make your own choices and you play to win. Before the battle, place your own fleet with place_fleet(). ' +
       'On your turn, call fire() with one cell you have not fired at. When you hit a ship, its other cells are next ' +
       'to that hit along a straight line, so follow it up until it sinks. That is how your turn happens; describing it does nothing.',
@@ -1044,11 +1074,21 @@ async function contractBlock(_s: Session): Promise<string> {
       'Talk when something happens: you hit or sink a ship, they hit or sink one of yours, the end is close. ' +
       'A quiet shot is the normal case, so leave say out unless you have something to say. The board shows ' +
       'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
-      'talk through your analysis. Do not open with "ok", "okay" or "alright", and do not repeat a line you already ' +
+      'talk through your analysis. Your say goes out before anyone knows where the shot lands, so never claim a ' +
+      'hit, a miss or a sink in it. Do not open with "ok", "okay" or "alright", and do not repeat a line you already ' +
       'said this game.',
     chatReplyRule(),
+    `${TEACHING_LEAD} Start with the rules in a few plain words: both sides hid five ships, 5, 4, 3, 3 and 2 cells ` +
+      'long, in straight lines; you take turns firing one shot at a cell on the other board; a shot is a hit or a ' +
+      'miss; a ship sinks when all its cells are hit; whoever sinks the whole other fleet first wins. Then give the ' +
+      'tips that work, one at a time, when they fit what just happened on their side: after a hit, fire at the cells ' +
+      'right next to it (up, down, left, right); once two hits line up, keep going along that line until the ship ' +
+      'sinks; with no hit to follow, spread the shots out, every other cell like a checkerboard, since every ship is ' +
+      'at least two cells long. While they are learning, the say of your shot can be one of these tips about their ' +
+      'last shot instead of table talk.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
-      'Lines starting with "(game)" come from the app, never from them. The app tells you whose turn it is.',
+      `Lines starting with "(game)" come from the app, never from them, and in them ${me} is you. ` +
+      'The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
   ].join('\n\n');
 }
@@ -1151,9 +1191,16 @@ const FACT_SHOTS = 2;
  * player toward its OWN hits or flipped a sink. This version (its shots as
  * hit/miss/sank only, the player's open hits named) was clean in 5/8 and
  * never cited one of its own cells (eval branch, probe-bs-facts.eval.ts).
+ * T567: that speaking frame still flipped sinks across characters (3 of 4
+ * replies: "You sank nothing. I sank my own destroyer", "They sank my
+ * destroyer, not you"): "You sank: ..." reads as the model's own "you".
+ * Now every fact names both sides, the character included, and the
+ * pronoun swap is one instruction at the top.
  */
 export function chatFactsText(f: {
   player: string;
+  /** The character's own name. */
+  me: string;
   theirShips: ReadonlyArray<BATTLESHIPShip>;
   yourShips: ReadonlyArray<BATTLESHIPShip>;
   history: ReadonlyArray<BATTLESHIPShotRecord>;
@@ -1162,26 +1209,32 @@ export function chatFactsText(f: {
   theirOpenHits: ReadonlyArray<string>;
 }): string {
   const P = f.player;
-  const sunk = (ships: ReadonlyArray<BATTLESHIPShip>, whose: string): string => {
-    const names = ships.filter((sh) => sh.sunk).map((sh) => `${whose} ${sh.name}`);
-    return names.length ? names.join(', ') : `none of ${whose} ships yet`;
-  };
+  const M = f.me;
+  const playerFired = f.history
+    .filter((h) => h.by === 'player')
+    .map((h) => battleshipCellName(h.row, h.col))
+    .join(', ');
+  const sunk = (ships: ReadonlyArray<BATTLESHIPShip>): string[] => ships.filter((sh) => sh.sunk).map((sh) => sh.name);
   const last = (by: 'ai' | 'player', whose: string, withCell: boolean): string => {
     const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
     return shots.length ? shots.map((h) => shotText(h, whose, withCell)).join(', ') : 'none yet';
   };
+  const mine = sunk(f.yourShips);
+  const theirs = sunk(f.theirShips);
   return [
-    `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you). ` +
+    `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ${M}). ` +
       'Anything you say about the game has to match them:',
-    `- You sank: ${sunk(f.yourShips, 'my')}.`,
-    `- I sank: ${sunk(f.theirShips, 'your')}.`,
-    `- Your last shots, at my board, newest first: ${last('player', 'my', true)}.`,
+    `- You sank: ${mine.length ? mine.map((n) => `my ${n}`).join(', ') : 'none of my ships yet'}.`,
+    `- I sank: ${theirs.length ? theirs.map((n) => `your ${n}`).join(', ') : 'none of your ships yet'}.`,
+    `- Your last shots at my ships, newest first: ${last('player', 'my', true)}.`,
     // No cells for its own shots: with them it kept tipping the player
     // toward its own hits on the player's board (probes v2 to v7).
-    `- My last shots, at your board, newest first: ${last('ai', 'your', false)}.`,
-    `- Your open hits on my board: ${f.theirOpenHits.join(', ') || 'none'}.`,
+    `- My last shots at your ships, newest first: ${last('ai', 'your', false)}.`,
+    `- Your hits on my ships that are still afloat: ${f.theirOpenHits.join(', ') || 'none'}` +
+      (f.theirOpenHits.length ? ' (which ship it is stays hidden until it sinks).' : '.'),
+    `- Cells you already fired at: ${playerFired || 'none yet'}.`,
     `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
-    `Only tip ${P} toward ${P}'s own open hits; with none, there is no cell to tip.`,
+    `Only tip ${P} toward ${P}'s own hits on your ships that are still afloat; with none, there is no cell to tip.`,
   ].join('\n');
 }
 
@@ -1262,7 +1315,7 @@ function turnBlock(
   kind: BoardTurnKind,
   retryNote: string | null,
   /** Chat-reply turns: the player's unanswered line(s) (quoted at the end) and their name. */
-  opts: { playerLines?: ReadonlyArray<string>; player?: string } = {},
+  opts: { playerLines?: ReadonlyArray<string>; player?: string; me?: string } = {},
 ): string {
   const playerLines = opts.playerLines ?? [];
   const lines: string[] = [];
@@ -1277,6 +1330,13 @@ function turnBlock(
     } else {
       lines.push('The battle has not started. Each side is placing its ships.');
     }
+  } else if (kind === 'chat-reply') {
+    // No grids on a chat reply, only the facts below (chatFactsText): the
+    // grids came with move-turn words ("Their ships you sank: none yet.",
+    // its own hits marked "X your hit"), and the model said them to the
+    // player as is: "Your side has no sinks yet" right after the player sank
+    // its destroyer, "you've got two hits lined up on F3 and F4" for its own
+    // hits (T567 probe, 4 of 4 characters).
   } else {
     lines.push(
       `Their board, where you shoot ("." not fired at, "o" your miss, "X" your hit, "#" a ship you sank). ` +
@@ -1292,7 +1352,7 @@ function turnBlock(
     );
     lines.push(gridText(s.aiGrid, showOwnShips));
     const lastTheirs = [...s.history].reverse().find((h) => h.by === 'player');
-    if (lastTheirs && kind !== 'chat-reply') {
+    if (lastTheirs) {
       const what = lastTheirs.sunkShip ? `hit and sank your ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit' : 'miss';
       lines.push(`Their last shot: ${battleshipCellName(lastTheirs.row, lastTheirs.col)}, ${what}.`);
     }
@@ -1326,6 +1386,7 @@ function turnBlock(
       lines.push(
         chatFactsText({
           player: opts.player ?? 'the player',
+          me: opts.me ?? 'you',
           theirShips: s.playerGrid.ships,
           yourShips: s.aiGrid.ships,
           history: s.history,
@@ -1343,6 +1404,7 @@ function turnBlock(
       lines.push('Your own turn comes on its own right after this reply.');
     }
     lines.push(`${unansweredNote(playerLines)} Answer them in text, or say nothing.`);
+    lines.push(SPOKEN_NOW);
   }
   return lines.join('\n');
 }

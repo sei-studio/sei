@@ -238,11 +238,11 @@ export function unansweredNote(texts: ReadonlyArray<string>): string {
 }
 
 /**
- * PENDING a founder decision (T565): let chat replies run two or three short
- * lines when the player asks how to play or for help. false = the current
- * "one short line, or nothing" everywhere. Flip to true to try it.
+ * Chat replies may run two or three short lines when the player asks how to
+ * play or for help (product call 261128: "increase line length, fix until
+ * they can teach"). false = "one short line, or nothing" everywhere.
  */
-export const LONGER_HELP_REPLIES = false;
+export const LONGER_HELP_REPLIES = true;
 
 /** The contract's chat-reply sentence, shared by Four in a Row and Fleet Battle. */
 export function chatReplyRule(longerHelp: boolean = LONGER_HELP_REPLIES): string {
@@ -253,6 +253,26 @@ export function chatReplyRule(longerHelp: boolean = LONGER_HELP_REPLIES): string
     ? `${base} When they ask how to play, or ask for help or the rules, you can use two or three short lines to explain.`
     : base;
 }
+
+/**
+ * The opening of each game's teaching paragraph (T567). Personas that are
+ * shy, gloomy or "bad at games" told a beginner "i'm still figuring this out
+ * too" and then gave thin or wrong rules (261128 eval). The persona shapes
+ * how it teaches, never whether the rules it states are right.
+ */
+export const TEACHING_LEAD =
+  'If they are new to the game or ask you to teach them, teach them as you play. You know this game and how ' +
+  'to play it well, whatever your persona is like, so state the rules and tips plainly and correctly, in your ' +
+  'own voice, and never tell them you do not know the game yourself.';
+
+/**
+ * The last line of a chat-reply turn block. Lyra, given the teaching
+ * paragraph, planned her answer in plain text on chat turns ("Ren is new and
+ * asks to be taught as we go. I should reply with the rules...") and every
+ * word of it was said out loud (T567 probe, 2 of 2 Four in a Row openers).
+ */
+export const SPOKEN_NOW =
+  'Everything you write now is said out loud to them exactly as written, so write only the words you say to them.';
 
 /**
  * A model reply made fit to send back as an assistant turn. Anthropic rejects

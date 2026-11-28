@@ -58,6 +58,8 @@ import {
   alreadyMovedResult,
   SAY_PROPERTY,
   chatReplyRule,
+  TEACHING_LEAD,
+  SPOKEN_NOW,
   unansweredNote,
   type BoardToolUse,
   type BoardTurnKind,
@@ -587,7 +589,10 @@ async function dispatchChat(s: Session): Promise<void> {
       characterId: s.characterId,
       kind: 'chat-reply',
       contract: await contractBlock(s),
-      turnBlock: turnBlock(s, 'chat-reply', null, entries.map((e) => e.text)),
+      turnBlock: turnBlock(s, 'chat-reply', null, entries.map((e) => e.text), {
+        player: ((await loadConfig()).preferred_name ?? '').trim() || 'the player',
+        me: (await getCharacter(s.characterId))?.name || 'you',
+      }),
       gameLog: s.gameLog,
       unansweredIds: entries.map((e) => e.id),
       clock: s.clock,
@@ -803,6 +808,127 @@ function applyMove(
   });
 }
 
+/** Who is who in the chat facts: the player's name and the character's. */
+export interface Connect4Sides {
+  ai: CONNECT4Color;
+  player: string;
+  me: string;
+}
+
+/** A side as the character says it to the player: "you (red)" / "I (yellow)". */
+function sideName(color: CONNECT4Color, sides: Connect4Sides, cap = false): string {
+  const who = color === sides.ai ? 'I' : cap ? 'You' : 'you';
+  return `${who} (${colorName(color)})`;
+}
+
+/**
+ * Chat-reply turns: each side's lines of two or more, in words. With the
+ * grid and the column stacks alone Haiku 5.5 misread lines whenever a
+ * beginner asked what to watch for (4 of 4 characters, T567 probe: "red has
+ * three across the bottom in columns 3 and 4"). Chat only: move turns read
+ * the board themselves, so this never plays a move for it.
+ */
+export function linesText(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  sides: Connect4Sides,
+): string {
+  const dirs: Array<[number, number]> = [[0, 1], [-1, 0], [-1, 1], [1, 1]];
+  const parts: string[] = [];
+  for (const color of [sides.ai === 'r' ? 'y' : 'r', sides.ai] as CONNECT4Color[]) {
+    const other: CONNECT4Color = color === 'r' ? 'y' : 'r';
+    const found: string[] = [];
+    for (const [dr, dc] of dirs) {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (board[r][c] !== color) continue;
+          // Only from the start of a run.
+          const pr = r - dr;
+          const pc = c - dc;
+          if (pr >= 0 && pr < ROWS && pc >= 0 && pc < COLS && board[pr][pc] === color) continue;
+          let n = 1;
+          while (board[r + dr * n]?.[c + dc * n] === color) n++;
+          if (n < 2) continue;
+          // Room: some four cells along this line hold the run and no
+          // piece of the other side.
+          let room = false;
+          for (let k = n - WIN; k <= 0 && !room; k++) {
+            room = Array.from({ length: WIN }, (_, i) => board[r + dr * (k + i)]?.[c + dc * (k + i)]).every(
+              (x) => x !== undefined && x !== other,
+            );
+          }
+          const row = (rr: number): string => (rr === ROWS - 1 ? 'the bottom row' : `row ${ROWS - rr} from the bottom`);
+          const endCol = c + dc * (n - 1) + 1;
+          found.push(
+            (dr === -1 && dc === 0
+              ? `${n} stacked in column ${c + 1}`
+              : dr === 0
+                ? `${n} across ${row(r)}, columns ${c + 1} to ${endCol}`
+                : `${n} on a diagonal going ${dr === -1 ? 'up' : 'down'} from column ${c + 1} to ${endCol}`) +
+              (n >= WIN ? '' : room ? ' (room to make four)' : ' (blocked, cannot become four)'),
+          );
+        }
+      }
+    }
+    // Labelled by what each side means to the player: asked "what should i
+    // watch out for?", replies kept telling the red player to block red's
+    // own diagonal when the lines were only labelled by owner (T567 probe).
+    parts.push(
+      color === sides.ai
+        ? `- My ${colorName(color)} lines, for you to block: ${found.join('; ') || 'no two in a line yet'}.`
+        : `- Your own ${colorName(color)} lines, for you to build on: ${found.join('; ') || 'no two in a line yet'}.`,
+    );
+  }
+  return parts.join('\n');
+}
+
+/**
+ * Chat-reply turns: every empty space that would complete four for a side,
+ * and whether it can be played now (it is the lowest empty space of its
+ * column). Chat only, like linesText.
+ */
+export function fourChancesText(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  sides: Connect4Sides,
+): string {
+  const parts: string[] = [];
+  for (const color of [sides.ai === 'r' ? 'y' : 'r', sides.ai] as CONNECT4Color[]) {
+    for (let c = 0; c < COLS; c++) {
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (board[r][c] !== null) continue;
+        const next = board.map((row) => row.slice());
+        next[r][c] = color;
+        if (!isWinningPiece(next, r, c)) continue;
+        const now = r === ROWS - 1 || board[r + 1][c] !== null;
+        parts.push(
+          now
+            ? `${sideName(color, sides)} can make four right now in column ${c + 1}`
+            : `${sideName(color, sides)} would make four in column ${c + 1}, row ${ROWS - r} from the bottom, once ` +
+                'that column fills up to it',
+        );
+      }
+    }
+  }
+  return parts.length
+    ? `- Chances to make four: ${parts.join('; ')}.`
+    : '- Chances to make four: none, nobody has three lined up with an open fourth space.';
+}
+
+/** The chat-reply facts: who is who, the lines, the chances to make four. */
+export function connect4ChatFacts(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  sides: Connect4Sides,
+): string {
+  const P = sides.player;
+  return [
+    `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ` +
+      `${sides.me}). Anything you say about the board has to match them:`,
+    linesText(board, sides),
+    fourChancesText(board, sides),
+    `${P} plays ${colorName(sides.ai === 'r' ? 'y' : 'r')}, so a tip for ${P} never says to block a ` +
+      `${colorName(sides.ai === 'r' ? 'y' : 'r')} line.`,
+  ].join('\n');
+}
+
 /** True when the piece at (row, col) is part of four in a row (any direction). */
 /**
  * The line of four (or more) through (row, col), as plain words for the
@@ -917,6 +1043,13 @@ async function contractBlock(s: Session): Promise<string> {
       'column you are playing or talk through your analysis: the board shows your move by itself. Do not open with ' +
       '"ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
+    `${TEACHING_LEAD} Start with the rules in a few plain words: you take turns dropping one piece into a column, ` +
+      'it falls to the lowest empty space, red goes first, and the first to get four of their own in a line, ' +
+      'across, up and down or diagonally, wins. Then give the tips that work, one at a time, when they fit what ' +
+      'just happened: the middle columns are part of the most lines, so they are strong; when the other side has ' +
+      'three lined up and the fourth space is open, block it; build your own lines that can be finished more than ' +
+      'one way; and before you play, check whether your piece lets the other side play on top of it to win. While ' +
+      'they are learning, the say of your move can be one of these tips about their last move instead of table talk.',
     'When you talk to them between moves, the same goes: never say which column you will play next.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
       'Lines starting with "(game)" come from the app, never from them. The app tells you whose turn it is.',
@@ -950,12 +1083,21 @@ function turnBlock(
   retryNote: string | null,
   /** Chat-reply turns: the player's unanswered line(s), quoted at the end. */
   playerLines: ReadonlyArray<string> = [],
+  /** Chat-reply turns: the player's name and the character's. */
+  opts: { player?: string; me?: string } = {},
 ): string {
   const ai = aiColorOf(s);
   const lines: string[] = [];
+  const P = opts.player ?? 'the player';
+  const M = opts.me ?? 'you';
+  // A chat reply names both sides instead of "you" / "they": asked "what
+  // should i watch for?", every character answered from its own seat ("red
+  // can extend it, column 5 blocks that line") to the red player (T567 probe).
   lines.push(
     'The board now (top row first; pieces fall to the bottom row; R = red, Y = yellow, . = empty). ' +
-      `You are ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}), they are ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}):`,
+      (kind === 'chat-reply'
+        ? `${P} is ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}), ${M} (you) is ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}):`
+        : `You are ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}), they are ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}):`),
   );
   lines.push(boardText(s));
   // The same board column by column: stacks are what a player reads first,
@@ -963,9 +1105,8 @@ function turnBlock(
   lines.push(`Each column from the bottom up: ${columnsText(s)}.`);
   const last = s.history[s.history.length - 1];
   if (last) {
-    lines.push(
-      `Last move: ${last.color === ai ? 'you' : 'they'} dropped in column ${last.column + 1}. Pieces played: ${s.moves} of 42.`,
-    );
+    const who = kind === 'chat-reply' ? (last.color === ai ? M : P) : last.color === ai ? 'you' : 'they';
+    lines.push(`Last move: ${who} dropped in column ${last.column + 1}. Pieces played: ${s.moves} of 42.`);
   }
   if (kind === 'move') {
     const open = legalColumns(s).map((c) => c + 1);
@@ -989,7 +1130,9 @@ function turnBlock(
           ? 'Whose turn: yours. You move in your own turn right after this reply, so do not say which column.'
           : 'Whose turn: theirs. You do not move until they do.',
     );
+    lines.push(connect4ChatFacts(s.board, { ai, player: P, me: M }));
     lines.push(`${unansweredNote(playerLines)} Answer them in text, or say nothing.`);
+    lines.push(SPOKEN_NOW);
   } else if (kind === 'game-over' && s.result) {
     const r = s.result;
     const how =
