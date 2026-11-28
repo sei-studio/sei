@@ -60,6 +60,9 @@ import {
   isWinningPiece,
   winningLineText,
   dropRow,
+  linesText,
+  fourChancesText,
+  connect4ChatFacts,
   __setConnect4TestHooks,
   __resetConnect4ForTests,
 } from './connect4Service';
@@ -508,5 +511,62 @@ describe('Four in a Row chat replies after the 261128 eval', () => {
     reply = () => ({ content: [text('ugh')] });
     await handlePlayerChat({ characterId: CHAR, text: 'your go' });
     expect(lastUser(calls[0])).toContain('Whose turn: yours, but your last try to move did not work');
+  });
+});
+
+describe('Four in a Row chat facts (lines, chances to make four)', () => {
+  const B = (rows: string[]) =>
+    rows.map((r) => r.split(' ').map((x) => (x === '.' ? null : x === 'R' ? 'r' : 'y'))) as Array<Array<'r' | 'y' | null>>;
+  const sides = { ai: 'y' as const, player: 'Ren', me: 'Sui' };
+
+  it('names both sides and says whether a line still has room', () => {
+    const board = B([
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . Y . . .',
+      '. . . R . . .',
+      '. . Y R R Y .',
+    ]);
+    const lines = linesText(board, sides);
+    expect(lines).toContain('2 stacked in column 4 (blocked, cannot become four)');
+    expect(lines).toContain('2 on a diagonal going down from column 4 to 5 (room to make four)');
+    expect(lines).toContain('- Your own red lines, for you to build on: 2 across the bottom row, columns 4 to 5 (blocked, cannot become four)');
+    expect(lines).toContain('- My yellow lines, for you to block: no two in a line yet.');
+    expect(fourChancesText(board, sides)).toBe(
+      '- Chances to make four: none, nobody has three lined up with an open fourth space.',
+    );
+    const facts = connect4ChatFacts(board, sides);
+    expect(facts).toContain('written the way you say them to Ren ("you" is Ren, "I" and "my" are you, Sui)');
+    expect(facts).toContain('Ren plays red, so a tip for Ren never says to block a red line.');
+  });
+
+  it('lists a playable four and one that is not reachable yet, and diagonals', () => {
+    const board = B([
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . Y R . . .',
+      '. R R R Y Y .',
+    ]);
+    const chances = fourChancesText(board, sides);
+    expect(chances).toContain('you (red) can make four right now in column 1');
+    expect(chances).not.toContain('I (yellow)');
+    const lines = linesText(board, sides);
+    expect(lines).toContain('3 across the bottom row, columns 2 to 4 (room to make four)');
+    expect(lines).toContain('2 on a diagonal going up from column 3 to 4 (room to make four)');
+    const later = fourChancesText(
+      B([
+        '. . . . . . .',
+        '. . . . . . .',
+        '. . . . . . .',
+        '. . . R . . .',
+        '. . R Y . . .',
+        '. R Y Y . . .',
+      ]),
+      sides,
+    );
+    expect(later).toContain('you (red) would make four in column 5, row 4 from the bottom, once that column fills up to it');
   });
 });

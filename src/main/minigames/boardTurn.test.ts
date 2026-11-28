@@ -172,9 +172,9 @@ describe('chat-reply thread and quoting (261128 eval: chat sent during her move 
     expect(unansweredNote([])).toBe('They just said something.');
   });
 
-  it('the longer help replies stay off by default; the flip adds one sentence', () => {
-    expect(LONGER_HELP_REPLIES).toBe(false);
-    expect(chatReplyRule()).toBe(chatReplyRule(false));
+  it('the longer help replies are on (product call 261128); off keeps one short line', () => {
+    expect(LONGER_HELP_REPLIES).toBe(true);
+    expect(chatReplyRule()).toBe(chatReplyRule(true));
     expect(chatReplyRule(false)).toMatch(/One short line, or nothing\.$/);
     expect(chatReplyRule(true)).toMatch(/^When they talk to you.*One short line, or nothing\. When they ask how to play, or ask for help or the rules, you can use two or three short lines to explain\.$/);
   });

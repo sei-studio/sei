@@ -577,6 +577,7 @@ describe('Fleet Battle prompt facts', () => {
     const ship = (name: BATTLESHIPShip['name'], sunk: boolean): BATTLESHIPShip => ({ name, size: 2, cells: [], sunk });
     const text = chatFactsText({
       player: 'Ren',
+      me: 'Sui',
       theirShips: [ship('carrier', false), ship('destroyer', true)],
       yourShips: [ship('battleship', true), ship('cruiser', false)],
       history: [
@@ -589,19 +590,21 @@ describe('Fleet Battle prompt facts', () => {
       turn: 'ai',
       theirOpenHits: ['E5'],
     });
-    expect(text).toContain('("you" is Ren, "I" and "my" are you)');
+    expect(text).toContain('("you" is Ren, "I" and "my" are you, Sui)');
     expect(text).toContain('- You sank: my battleship.');
     expect(text).toContain('- I sank: your destroyer.');
-    expect(text).toContain('- Your last shots, at my board, newest first: F5 sank my battleship, E5 hit.');
-    expect(text).toContain('- My last shots, at your board, newest first: sank your destroyer, hit.');
-    expect(text).not.toMatch(/B2|B3/); // its own shot cells are left out
-    expect(text).toContain('- Your open hits on my board: E5.');
+    expect(text).toContain('- Your last shots at my ships, newest first: F5 sank my battleship, E5 hit.');
+    expect(text).toContain('- My last shots at your ships, newest first: sank your destroyer, hit.');
+    expect(text).not.toMatch(/A1|B2|B3/); // its own shot cells are left out
+    expect(text).toContain('- Your hits on my ships that are still afloat: E5 (which ship it is stays hidden until it sinks).');
+    expect(text).toContain('- Cells you already fired at: E5, F5.');
     expect(text).toContain('- Next shot: mine.');
-    const none = chatFactsText({ player: 'Ren', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
+    const none = chatFactsText({ player: 'Ren', me: 'Sui', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
     expect(none).toContain('- You sank: none of my ships yet.');
     expect(none).toContain('- I sank: none of your ships yet.');
-    expect(none).toContain('- Your last shots, at my board, newest first: none yet.');
-    expect(none).toContain('- Your open hits on my board: none.');
+    expect(none).toContain('- Your last shots at my ships, newest first: none yet.');
+    expect(none).toContain('- Your hits on my ships that are still afloat: none.');
+    expect(none).toContain('- Cells you already fired at: none yet.');
     expect(none).toContain('- Next shot: yours.');
   });
 
@@ -637,9 +640,9 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(sent).toContain('(game) You placed your fleet.');
     expect(sent).not.toMatch(/carrier A1|A1 to A5/);
     const block = lastUserText(calls[0]);
-    const rows = gridRows(block);
-    expect(rows).toHaveLength(20);
-    expect(rows.join('')).not.toMatch(/S/);
+    // No grids on a chat reply (T567): the facts are the board.
+    expect(gridRows(block)).toHaveLength(0);
+    expect(block).not.toContain('Their ships you sank');
     expect(block).toContain('Facts the app checked');
     expect(block).toContain('- You sank: none of my ships yet.');
     expect(block).toContain('- Next shot: yours.');
@@ -654,9 +657,10 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     reply = () => ({ content: [text('lucky')] });
     await handlePlayerChat({ characterId: CHAR, text: 'where next?' });
     const block = lastUserText(calls[0]);
-    expect(block).toContain('- Your open hits on my board: A1.');
-    expect(block).toContain('- Your last shots, at my board, newest first: A1 hit.');
-    expect(block).toContain('- My last shots, at your board, newest first: miss.');
+    expect(block).toContain('- Your hits on my ships that are still afloat: A1 (which ship it is stays hidden until it sinks).');
+    expect(block).toContain('- Your last shots at my ships, newest first: A1 hit.');
+    expect(block).toContain('- My last shots at your ships, newest first: miss.');
+    expect(block).toContain('Everything you write now is said out loud');
   });
 
   it('a line sent while its shot runs is quoted and placed after the shot and the line it said', async () => {
@@ -682,8 +686,10 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(last.indexOf('can you teach me?')).toBeLessThan(last.indexOf('Facts the app checked'));
     // In time order the line sat before the shot and before "here goes".
     const whole = JSON.stringify(msgs);
-    expect(whole.indexOf('You fired at J10')).toBeGreaterThan(-1);
-    expect(whole.indexOf('You fired at J10')).toBeLessThan(whole.indexOf('can you teach me?'));
+    // Its own shot in the log: named, no cell (T567).
+    expect(whole.indexOf("fired at Player's ships: miss.")).toBeGreaterThan(-1);
+    expect(whole.indexOf("fired at Player's ships: miss.")).toBeLessThan(whole.indexOf('can you teach me?'));
+    expect(whole).not.toContain('fired at J10');
     expect(whole.indexOf('here goes')).toBeGreaterThan(-1);
     expect(whole.indexOf('here goes')).toBeLessThan(whole.indexOf('can you teach me?'));
     expect(whole.split('can you teach me?')).toHaveLength(3); // once in the thread, once quoted
