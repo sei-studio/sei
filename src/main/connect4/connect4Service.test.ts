@@ -63,6 +63,8 @@ import {
   linesText,
   fourChancesText,
   connect4ChatFacts,
+  reactionText,
+  winningColumns,
   __setConnect4TestHooks,
   __resetConnect4ForTests,
 } from './connect4Service';
@@ -440,7 +442,67 @@ describe('Four in a Row turns', () => {
     expect(res?.replies.map((m) => m.text)).toEqual(['Nice try']);
     expect(state().moves).toBe(0); // the chat turn's play() was refused
     const chatCall = calls[0];
-    expect(JSON.stringify(chatCall.messages)).toContain('1 2 3 4 5 6 7');
+    // No grid on a chat reply (T568), the board as "yours" / "mine".
+    const sent = JSON.stringify(chatCall.messages);
+    expect(sent).not.toContain('1 2 3 4 5 6 7');
+    expect(sent).toContain('column 1: empty; column 2: empty');
+  });
+
+  it('the say goes out before the piece lands; a chance to make four gets one reaction hop (T568)', async () => {
+    const seen: Array<{ text: string; ai: number }> = [];
+    initCONNECT4Service({
+      pushState: (st) => pushed.push(st),
+      pushChatMessage: (_id, m) => {
+        chatPushed.push(m);
+        if (m.role === 'companion') seen.push({ text: m.text, ai: aiPieces(state()) });
+      },
+      isSummoned: () => false,
+    });
+    let n = 0;
+    reply = (p) => {
+      if (JSON.stringify(p.messages[p.messages.length - 1]).includes('a moment you can say one short line')) {
+        return { content: [text('Column 4 wins it for you, look')] };
+      }
+      n++;
+      return { content: [toolUse('play', { column: 7, say: `Move ${n}` })] };
+    };
+    await startCONNECT4(CHAR, { playerColor: 'r' });
+    for (const col of [0, 1, 2]) {
+      await waitFor(() => state().turn === 'r' && !state().aiThinking);
+      await playerMove(CHAR, col);
+    }
+    await waitFor(() => aiPieces(state()) === 3 && state().turn === 'r' && !state().aiThinking);
+    // Quiet positions: one call each. After the third: red can win in 4, yellow in 7.
+    expect(calls).toHaveLength(4);
+    const ask = JSON.stringify(calls[3].messages[calls[3].messages.length - 1]);
+    expect(ask).toContain('can win right now: one more of your own pieces in column 4 makes four');
+    expect(ask).toContain('I can win next move: one more of my pieces in column 7 makes four');
+    expect(seen).toEqual([
+      { text: 'Move 1', ai: 0 },
+      { text: 'Move 2', ai: 1 },
+      { text: 'Move 3', ai: 2 },
+      { text: 'Column 4 wins it for you, look', ai: 3 },
+    ]);
+  });
+
+  it('reactionText is null on a quiet board and names a two-way threat', () => {
+    const B = (rows: string[]) =>
+      rows.map((r) => r.split(' ').map((x) => (x === '.' ? null : x === 'R' ? 'r' : 'y'))) as Array<Array<'r' | 'y' | null>>;
+    const sides = { ai: 'y' as const, player: 'Ren', me: 'Sui' };
+    const empty = B(Array.from({ length: 6 }, () => '. . . . . . .'));
+    expect(reactionText(empty, sides)).toBeNull();
+    const twoWay = B([
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. . . . . . .',
+      '. R R . Y Y Y',
+    ]);
+    expect(winningColumns(twoWay, 'y')).toEqual([3]);
+    const t = reactionText(twoWay, sides)!;
+    expect(t).toContain('I can win next move: one more of my pieces in column 4 makes four, so you have to block it now.');
+    expect(t).not.toContain('You, Ren, can win');
   });
 
   it('a config read that throws fails the attempt (then Try again), never a turn stuck on thinking', async () => {
@@ -553,8 +615,14 @@ describe('Four in a Row chat facts (lines, chances to make four)', () => {
     const lines = linesText(board, sides);
     expect(lines).toContain('2 stacked in column 4 (blocked, cannot become four)');
     expect(lines).toContain('2 on a diagonal going down from column 4 to 5 (room to make four)');
-    expect(lines).toContain('- Your own red lines, for you to build on: 2 across the bottom row, columns 4 to 5 (blocked, cannot become four)');
-    expect(lines).toContain('- My yellow lines, for you to block: no two in a line yet.');
+    expect(lines).toContain(
+      '- Your own red lines, yours to build on and never to block: 2 across the bottom row, columns 4 to 5 (blocked, cannot become four)',
+    );
+    expect(lines).toContain(
+      '- What you have to watch out for, my yellow lines: none yet, I have no two in a line, so nothing of mine to block.',
+    );
+    // Hers first: the answer to "what should i watch out for?".
+    expect(lines.indexOf('watch out for')).toBeLessThan(lines.indexOf('Your own red lines'));
     expect(fourChancesText(board, sides)).toBe(
       '- Chances to make four: none, nobody has three lined up with an open fourth space.',
     );

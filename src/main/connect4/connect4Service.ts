@@ -627,20 +627,27 @@ export function reactionText(
   const P = sides.player;
   const cols = (cs: number[]): string => cs.map((c) => `column ${c + 1}`).join(' or ');
   const facts: string[] = [];
-  if (mine.length) {
+  if (theirs.length) {
     facts.push(
-      `- I (${colorName(sides.ai)}) can make four next move in ${cols(mine)}, so you have to block ${mine.length > 1 ? 'one of those' : 'it'} now${mine.length > 1 ? ', and you can only block one' : ''}.`,
+      `- You, ${P}, can win right now: one more of your own pieces in ${cols(theirs)} makes four. That is your win ` +
+        'to take, not a line to block.',
     );
   }
-  if (theirs.length) facts.push(`- You (${colorName(playerColor)}) can make four right now in ${cols(theirs)}.`);
+  if (mine.length) {
+    facts.push(
+      `- I can win next move: one more of my pieces in ${cols(mine)} makes four, so ` +
+        (mine.length > 1 ? 'you would have to block both, and you can only block one.' : 'you have to block it now.'),
+    );
+  }
   return [
     `Your piece is on the board and it is ${P}'s move. Facts the app checked about the board now, written the way ` +
-      `you say them to ${P} ("you" is ${P}, "I" and "my" are you):`,
+      `you say them to ${P} ("you" is ${P}, "I" and "my" are you; ${P} is ${colorName(playerColor)}, you are ` +
+      `${colorName(sides.ai)}):`,
     ...facts,
-    'This is a moment you can say one short line about, in your own voice. When they are learning, showing them the ' +
-      'spot that wins or the one they must block is the most useful tip there is; whether you warn them is your ' +
-      'choice. Do not repeat what you said with your move. Everything you write now is said out loud exactly as ' +
-      'written, so write only the words you say, or nothing at all.',
+    'This is a moment you can say one short line about, in your own voice. If they asked you to teach them, ' +
+      'showing them the spot that wins or the one they must block is the most useful tip there is; otherwise you ' +
+      'play to win and can gloat, worry or stay quiet. Do not repeat what you said with your move. Everything you ' +
+      'write now is said out loud exactly as written, so write only the words you say, or nothing at all.',
   ].join('\n');
 }
 
@@ -901,7 +908,7 @@ export function linesText(
 ): string {
   const dirs: Array<[number, number]> = [[0, 1], [-1, 0], [-1, 1], [1, 1]];
   const parts: string[] = [];
-  for (const color of [sides.ai === 'r' ? 'y' : 'r', sides.ai] as CONNECT4Color[]) {
+  for (const color of [sides.ai, sides.ai === 'r' ? 'y' : 'r'] as CONNECT4Color[]) {
     const other: CONNECT4Color = color === 'r' ? 'y' : 'r';
     const found: string[] = [];
     for (const [dr, dc] of dirs) {
@@ -939,10 +946,14 @@ export function linesText(
     // Labelled by what each side means to the player: asked "what should i
     // watch out for?", replies kept telling the red player to block red's
     // own diagonal when the lines were only labelled by owner (T567 probe).
+    // T568: written as the answer to "what should i watch out for?". With
+    // only "no two in a line yet" under her own lines, characters reached
+    // for the player's lines and called them the threat.
     parts.push(
       color === sides.ai
-        ? `- My ${colorName(color)} lines, for you to block: ${found.join('; ') || 'no two in a line yet'}.`
-        : `- Your own ${colorName(color)} lines, for you to build on: ${found.join('; ') || 'no two in a line yet'}.`,
+        ? `- What you have to watch out for, my ${colorName(color)} lines: ` +
+            `${found.join('; ') || 'none yet, I have no two in a line, so nothing of mine to block'}.`
+        : `- Your own ${colorName(color)} lines, yours to build on and never to block: ${found.join('; ') || 'no two in a line yet'}.`,
     );
   }
   return parts.join('\n');
@@ -1122,6 +1133,9 @@ async function contractBlock(s: Session): Promise<string> {
       'one way; and before you play, check whether your piece lets the other side play on top of it to win. While ' +
       'they are learning, the say of your move can be one of these tips about their last move instead of table talk.',
     'When you talk to them between moves, the same goes: never say which column you will play next.',
+    `When you talk to ${playerName}, their pieces are "yours" and your pieces are "mine": "you have two in a row", ` +
+      '"block my three". Never call them "red", "yellow" or "they" to their face, and a tip to them is about ' +
+      'blocking your lines and building their own, never blocking their own.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
       'Lines starting with "(game)" come from the app, never from them. The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
@@ -1148,6 +1162,16 @@ function columnsText(s: Session): string {
   }).join('; ');
 }
 
+/** Chat replies: each column from the bottom up as "yours" / "mine", said to the player. */
+function columnsSpoken(s: Session): string {
+  const ai = aiColorOf(s);
+  return Array.from({ length: COLS }, (_, col) => {
+    const stack: string[] = [];
+    for (let r = ROWS - 1; r >= 0 && s.board[r][col] !== null; r--) stack.push(s.board[r][col] === ai ? 'mine' : 'yours');
+    return `column ${col + 1}: ${stack.length ? stack.join(', ') : 'empty'}${stack.length === ROWS ? ' (full)' : ''}`;
+  }).join('; ');
+}
+
 function turnBlock(
   s: Session,
   kind: BoardTurnKind,
@@ -1164,16 +1188,28 @@ function turnBlock(
   // A chat reply names both sides instead of "you" / "they": asked "what
   // should i watch for?", every character answered from its own seat ("red
   // can extend it, column 5 blocks that line") to the red player (T567 probe).
-  lines.push(
-    'The board now (top row first; pieces fall to the bottom row; R = red, Y = yellow, . = empty). ' +
-      (kind === 'chat-reply'
-        ? `${P} is ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}), ${M} (you) is ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}):`
-        : `You are ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}), they are ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}):`),
-  );
-  lines.push(boardText(s));
-  // The same board column by column: stacks are what a player reads first,
-  // and Haiku 5.5 misread them from the grid alone (claimed wins that were not there).
-  lines.push(`Each column from the bottom up: ${columnsText(s)}.`);
+  if (kind === 'chat-reply') {
+    // No grid on a chat reply, the board only in the words she says it to
+    // the player (T568). With the R/Y grid, asked "what should i watch out
+    // for?", 3 of 4 characters told the red player to block red's own
+    // diagonal ("red has room to finish that one, block it"): they read the
+    // grid from their own seat. Fleet Battle's chat facts got who-is-who
+    // right once its grids went (T567).
+    lines.push(
+      `${P} is ${colorName(s.playerColor)} and you (${M}) are ${colorName(ai)}. The board column by column, from the ` +
+        `bottom up, written the way you say it to ${P} ("yours" = ${P}'s ${colorName(s.playerColor)} pieces, ` +
+        `"mine" = your ${colorName(ai)} pieces): ${columnsSpoken(s)}.`,
+    );
+  } else {
+    lines.push(
+      'The board now (top row first; pieces fall to the bottom row; R = red, Y = yellow, . = empty). ' +
+        `You are ${colorName(ai)} (${ai === 'r' ? 'R' : 'Y'}), they are ${colorName(s.playerColor)} (${s.playerColor === 'r' ? 'R' : 'Y'}):`,
+    );
+    lines.push(boardText(s));
+    // The same board column by column: stacks are what a player reads first,
+    // and Haiku 5.5 misread them from the grid alone (claimed wins that were not there).
+    lines.push(`Each column from the bottom up: ${columnsText(s)}.`);
+  }
   const last = s.history[s.history.length - 1];
   if (last) {
     const who = kind === 'chat-reply' ? (last.color === ai ? M : P) : last.color === ai ? 'you' : 'they';

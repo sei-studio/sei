@@ -388,6 +388,60 @@ describe('Fleet Battle shots', () => {
     expect(chatPushed.filter((m) => m.role === 'companion').map((m) => m.text)).toEqual(['Fine, fine']);
   });
 
+  it('the say goes out before its shot lands; a sink gets one reaction hop that knows the result (T568)', async () => {
+    const seen: Array<{ text: string; aiShots: number }> = [];
+    initBATTLESHIPService({
+      pushState: () => {},
+      pushChatMessage: (_id, m) => {
+        chatPushed.push(m);
+        if (m.role === 'companion') seen.push({ text: m.text, aiShots: state().aiShots });
+      },
+      isSummoned: () => false,
+    });
+    await startBattle();
+    calls = [];
+    let n = 0;
+    reply = (p) => {
+      if (isReactionHop(p)) return { content: [text('Down goes your destroyer')] };
+      n++;
+      return { content: [toolUse('fire', { cell: n === 1 ? 'A2' : 'B2', say: n === 1 ? 'Here goes' : 'Again' })] };
+    };
+    await playerMove(CHAR, 9, 9);
+    await waitFor(() => state().aiShots === 1 && state().turn === 'player' && !state().aiThinking);
+    // A plain hit: no reaction hop.
+    expect(calls).toHaveLength(1);
+    await playerMove(CHAR, 9, 8);
+    await waitFor(() => state().aiShots === 2 && state().turn === 'player' && !state().aiThinking);
+    expect(calls).toHaveLength(3);
+    const ask = JSON.stringify(calls[2].messages[calls[2].messages.length - 1]);
+    expect(ask).toContain('I just sank your destroyer');
+    expect(ask).toContain('You have 4 of 5 ships afloat; I have 5 of 5 afloat.');
+    expect(calls[2].maxTokens).toBeLessThan(calls[1].maxTokens);
+    // Each say before its own shot, the reaction after the sink.
+    expect(seen).toEqual([
+      { text: 'Here goes', aiShots: 0 },
+      { text: 'Again', aiShots: 1 },
+      { text: 'Down goes your destroyer', aiShots: 2 },
+    ]);
+  });
+
+  it('sinking the last ship ends the game without a reaction hop (the game-over turn speaks)', async () => {
+    shots = [...PLAYER_SHIP_CELLS];
+    await startBattle({ playerStarts: false });
+    const misses: Array<[number, number]> = [
+      ...Array.from({ length: 10 }, (_, c) => [9, c] as [number, number]),
+      ...Array.from({ length: 10 }, (_, c) => [7, c] as [number, number]),
+    ].slice(0, PLAYER_SHIP_CELLS.length - 1);
+    for (const [r, c] of misses) {
+      await waitFor(() => state().turn === 'player' && !state().aiThinking);
+      await playerMove(CHAR, r, c);
+    }
+    await waitFor(() => state().status === 'ended');
+    const asks = calls.filter((c) => isReactionHop(c));
+    // Five sinks, the last one ends the game.
+    expect(asks).toHaveLength(4);
+  });
+
   it('a sunk cell cannot be fired at again', async () => {
     // Sink the player's destroyer (B2..A2 = col 1, rows 0-1), then aim at it once more.
     shots = ['A2', 'B2'];
@@ -592,19 +646,24 @@ describe('Fleet Battle prompt facts', () => {
       ],
       turn: 'ai',
       theirOpenHits: ['E5'],
+      theirOpenNext: ['D5', 'E4', 'E6'],
     });
     expect(text).toContain('("you" is Ren, "I" and "my" are you, Sui)');
-    expect(text).toContain('- You sank: my battleship.');
-    expect(text).toContain('- I sank: your destroyer.');
+    expect(text).toContain('These facts are always right.');
+    expect(text).toContain('- My ships, the ones you shoot at: battleship sunk (you sank it); cruiser still afloat.');
+    expect(text).toContain('- Your ships, the ones I shoot at: destroyer sunk (I sank it); carrier still afloat.');
     expect(text).toContain('- Your last shots at my ships, newest first: F5 sank my battleship, E5 hit.');
     expect(text).toContain('- My last shots at your ships, newest first: sank your destroyer, hit.');
     expect(text).not.toMatch(/A1|B2|B3/); // its own shot cells are left out
-    expect(text).toContain('- Your hits on my ships that are still afloat: E5 (which ship it is stays hidden until it sinks).');
+    expect(text).toContain(
+      '- Your hits on my ships that are still afloat: E5 (which ship it is stays hidden until it sinks). ' +
+        'Next to them, not fired at yet: D5, E4, E6.',
+    );
     expect(text).toContain('- Cells you already fired at: E5, F5.');
     expect(text).toContain('- Next shot: mine.');
     const none = chatFactsText({ player: 'Ren', me: 'Sui', theirShips: [], yourShips: [], history: [], turn: 'player', theirOpenHits: [] });
-    expect(none).toContain('- You sank: none of my ships yet.');
-    expect(none).toContain('- I sank: none of your ships yet.');
+    expect(none).toContain('- My ships, the ones you shoot at: none sunk yet, all 5 afloat.');
+    expect(none).toContain('- Your ships, the ones I shoot at: none sunk yet, all 5 afloat.');
     expect(none).toContain('- Your last shots at my ships, newest first: none yet.');
     expect(none).toContain('- Your hits on my ships that are still afloat: none.');
     expect(none).toContain('- Cells you already fired at: none yet.');
@@ -647,7 +706,7 @@ describe('Fleet Battle turns after the 261128 eval', () => {
     expect(gridRows(block)).toHaveLength(0);
     expect(block).not.toContain('Their ships you sank');
     expect(block).toContain('Facts the app checked');
-    expect(block).toContain('- You sank: none of my ships yet.');
+    expect(block).toContain('- My ships, the ones you shoot at: none sunk yet, all 5 afloat.');
     expect(block).toContain('- Next shot: yours.');
     expect(block).toContain('They just said to you: \\"where are your ships?\\"');
   });
