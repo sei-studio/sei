@@ -1434,11 +1434,24 @@ function turnBlock(
     const said: string[] = [];
     if (lastTheirs) {
       const cell = battleshipCellName(lastTheirs.row, lastTheirs.col);
-      const what = lastTheirs.sunkShip ? `sank my ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit one of my ships' : 'missed';
-      said.push(`your last shot, ${cell}, ${what}`);
+      // Subject first: with "your last shot, B10, sank my submarine" it
+      // still said "your submarine went down fast" (full T568 games).
+      said.push(
+        lastTheirs.sunkShip
+          ? `you sank my ${lastTheirs.sunkShip} with your last shot (${cell})`
+          : lastTheirs.hit
+            ? `you hit one of my ships with your last shot (${cell})`
+            : `your last shot (${cell}) missed my ships`,
+      );
     }
     if (lastMine) {
-      said.push(`my last shot ${lastMine.sunkShip ? `sank your ${lastMine.sunkShip}` : lastMine.hit ? 'hit one of your ships' : 'missed'}`);
+      said.push(
+        lastMine.sunkShip
+          ? `I sank your ${lastMine.sunkShip} with my last shot`
+          : lastMine.hit
+            ? 'I hit one of your ships with my last shot'
+            : 'my last shot missed your ships',
+      );
     }
     if (said.length) {
       const P = s.names.player;
@@ -1470,7 +1483,7 @@ function turnBlock(
       // talked on 3 of 4 shots and most wrong claims were in those lines.
       lines.push('You talked with your last shot, so leave say out this time.');
     }
-    lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at, and say only if you have something to say.');
+    lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at. A say, if any, is about the shots before this one or a tip, never this shot.');
   } else if (kind === 'chat-reply') {
     if (s.status === 'active') {
       lines.push(

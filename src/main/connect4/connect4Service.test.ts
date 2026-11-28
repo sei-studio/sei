@@ -477,6 +477,10 @@ describe('Four in a Row turns', () => {
     const ask = JSON.stringify(calls[3].messages[calls[3].messages.length - 1]);
     expect(ask).toContain('can win right now: one more of your own pieces in column 4 makes four');
     expect(ask).toContain('I can win next move: one more of my pieces in column 7 makes four');
+    // The move turn gives their last piece in the words she says it in.
+    const turn = JSON.stringify(calls[2].messages[calls[2].messages.length - 1]);
+    expect(turn).toContain('your last piece went into column 3, on the bottom row');
+    expect(turn).toContain('never this move');
     expect(seen).toEqual([
       { text: 'Move 1', ai: 0 },
       { text: 'Move 2', ai: 1 },
