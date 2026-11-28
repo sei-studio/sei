@@ -759,7 +759,7 @@ export function sinkReactionText(s: Pick<Session, 'names' | 'playerGrid' | 'aiGr
   const mine = s.aiGrid.ships.filter((sh) => !sh.sunk).length;
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you): I just ` +
-      `sank your ${ship}. You have ${theirs} of 5 ships afloat; I have ${mine} of 5 afloat. Their shot is next.`,
+      `sank your ${ship}, so the ship that went down is ${P}'s and I am the one who sank it. You have ${theirs} of 5 ships afloat; I have ${mine} of 5 afloat. Their shot is next.`,
     'This is a moment you can say one short line about, in your own voice. Do not repeat what you said with your ' +
       'shot, and never say where your own ships are. Everything you write now is said out loud exactly as ' +
       'written, so write only the words you say, or nothing at all.',
@@ -1421,17 +1421,27 @@ function turnBlock(
         : `Your own board, where they shoot ("o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`,
     );
     lines.push(gridText(s.aiGrid, showOwnShips));
+    // The last shots in the words it says them to the player in (T568): the
+    // say goes straight to them, and with "Their last shot: H5, hit and sank
+    // your submarine" it said "they took my battleship" and "your submarine
+    // got me" to the player (3 of 4 characters, full games). Its own last
+    // result is here too: with only the grid it reacted to the wrong shot.
+    // No cell for its own shot (the grid has it): with one it tipped the
+    // player toward its own hits (T567).
     const lastTheirs = [...s.history].reverse().find((h) => h.by === 'player');
+    const lastMine = kind === 'move' ? [...s.history].reverse().find((h) => h.by === 'ai') : undefined;
+    const said: string[] = [];
     if (lastTheirs) {
-      const what = lastTheirs.sunkShip ? `hit and sank your ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit' : 'miss';
-      lines.push(`Their last shot: ${battleshipCellName(lastTheirs.row, lastTheirs.col)}, ${what}.`);
+      const cell = battleshipCellName(lastTheirs.row, lastTheirs.col);
+      const what = lastTheirs.sunkShip ? `sank my ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit one of my ships' : 'missed';
+      said.push(`your last shot, ${cell}, ${what}`);
     }
-    // Its own last result, said plainly: with only the grid it reacted to the
-    // wrong shot (T568).
-    const lastMine = [...s.history].reverse().find((h) => h.by === 'ai');
-    if (lastMine && kind === 'move') {
-      const what = lastMine.sunkShip ? `hit and sank their ${lastMine.sunkShip}` : lastMine.hit ? 'hit' : 'miss';
-      lines.push(`Your last shot: ${battleshipCellName(lastMine.row, lastMine.col)}, ${what}.`);
+    if (lastMine) {
+      said.push(`my last shot ${lastMine.sunkShip ? `sank your ${lastMine.sunkShip}` : lastMine.hit ? 'hit one of your ships' : 'missed'}`);
+    }
+    if (said.length) {
+      const P = s.names.player;
+      lines.push(`The last shots, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you): ${said.join('; ')}.`);
     }
   }
 

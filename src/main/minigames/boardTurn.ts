@@ -168,8 +168,9 @@ export const SAY_PROPERTY = {
   type: 'string',
   description:
     'Optional. One short line you say out loud, in your own voice, just BEFORE your move lands, so it can only be ' +
-    'about what already happened (their last move, the game so far) or a tip. Leave it out on most moves. Never put ' +
-    'a cell name, a column number or your plan in it (the board shows the move), and do not start it with "ok".',
+    'about the moves before this one or a tip. Leave it out on most moves. Never about this move: not where it ' +
+    'goes, what it blocks or what it sets up. No counting of shots, hits, pieces or ships and no list of what is ' +
+    'left beyond what the facts say outright. No cell name or column number, and do not start it with "ok".',
 } as const;
 
 /** Most tokens the reaction hop may write: one short spoken line. */

@@ -629,6 +629,7 @@ describe('Four in a Row chat facts (lines, chances to make four)', () => {
     const facts = connect4ChatFacts(board, sides);
     expect(facts).toContain('written the way you say them to Ren ("you" is Ren, "I" and "my" are you, Sui)');
     expect(facts).toContain('Ren plays red, so a tip for Ren never says to block a red line.');
+    expect(facts.indexOf('Chances to make four')).toBeLessThan(facts.indexOf('watch out for'));
   });
 
   it('lists a playable four and one that is not reachable yet, and diagonals', () => {
@@ -641,7 +642,7 @@ describe('Four in a Row chat facts (lines, chances to make four)', () => {
       '. R R R Y Y .',
     ]);
     const chances = fourChancesText(board, sides);
-    expect(chances).toContain('you (red) can make four right now in column 1');
+    expect(chances).toContain('you (red) can make four right now in column 1, your win to take, not a line to block');
     expect(chances).not.toContain('I (yellow)');
     const lines = linesText(board, sides);
     expect(lines).toContain('3 across the bottom row, columns 2 to 4 (room to make four)');
@@ -658,5 +659,10 @@ describe('Four in a Row chat facts (lines, chances to make four)', () => {
       sides,
     );
     expect(later).toContain('you (red) would make four in column 5, row 4 from the bottom, once that column fills up to it');
+    const hers = fourChancesText(
+      B(['. . . . . . .', '. . . . . . .', '. . . . . . .', '. . . . . . .', '. . . . . . .', 'R R . Y Y Y .']),
+      sides,
+    );
+    expect(hers).toContain('I (yellow) can make four right now in column 7, so you have to block it there now');
   });
 });

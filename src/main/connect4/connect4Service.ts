@@ -820,7 +820,10 @@ async function runGameOverTurn(s: Session): Promise<void> {
     characterId: s.characterId,
     kind: 'game-over',
     contract: await contractBlock(s),
-    turnBlock: turnBlock(s, 'game-over', null),
+    turnBlock: turnBlock(s, 'game-over', null, [], {
+      player: ((await loadConfig()).preferred_name ?? '').trim() || 'the player',
+      me: (await getCharacter(s.characterId))?.name || 'you',
+    }),
     gameLog: s.gameLog,
     clock: s.clock,
     tools: CONNECT4_TOOLS,
@@ -979,9 +982,15 @@ export function fourChancesText(
         const now = r === ROWS - 1 || board[r + 1][c] !== null;
         parts.push(
           now
-            ? `${sideName(color, sides)} can make four right now in column ${c + 1}`
+            ? `${sideName(color, sides)} can make four right now in column ${c + 1}` +
+                (color === sides.ai ? ', so you have to block it there now' : ', your win to take, not a line to block')
             : `${sideName(color, sides)} would make four in column ${c + 1}, row ${ROWS - r} from the bottom, once ` +
-                'that column fills up to it',
+                'that column fills up to it' +
+                // T568: asked about such a line, Marv said "block column 5
+                // now", the move that filled the space under his own four.
+                (color === sides.ai
+                  ? `; the piece that fills the space just under it gives it to me, so you do not want to be the one who puts it there`
+                  : '; the piece that fills the space just under it gives it to you'),
         );
       }
     }
@@ -1000,8 +1009,11 @@ export function connect4ChatFacts(
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ` +
       `${sides.me}). Anything you say about the board has to match them. ${FACTS_WIN}`,
-    linesText(board, sides),
+    // Chances first (T568): with the lines first, Eris answered "do you have
+    // a win coming?" with "Yes, I have a win coming. Column 7 ... block it"
+    // when column 7 was the player's own win.
     fourChancesText(board, sides),
+    linesText(board, sides),
     `${P} plays ${colorName(sides.ai === 'r' ? 'y' : 'r')}, so a tip for ${P} never says to block a ` +
       `${colorName(sides.ai === 'r' ? 'y' : 'r')} line.`,
   ].join('\n');
@@ -1242,13 +1254,21 @@ function turnBlock(
     lines.push(SPOKEN_NOW);
   } else if (kind === 'game-over' && s.result) {
     const r = s.result;
+    // Who won in the names and in the words to say it in (T568), as Fleet
+    // Battle does: with "You won with your red pieces" Marv told the player
+    // who had just lost "you won. four on the diagonal".
+    const line = lastLineText(s);
     const how =
       r.reason === 'connect-four'
-        ? `${r.winner === ai ? 'You won' : 'They won'} with ${r.winner === ai ? 'your' : 'their'} ${colorName(r.winner ?? ai)} pieces: ${lastLineText(s)}. That is settled; the app checked it.`
+        ? r.winner === ai
+          ? `${M} (you) won and ${P} lost: your ${colorName(ai)} pieces made four, ${line}. Said to ${P}, that is ` +
+            '"I won" and "you lost", never "you won". That is settled; the app checked it.'
+          : `${P} won and ${M} (you) lost: their ${colorName(r.winner ?? ai)} pieces made four, ${line}. Said to ${P}, ` +
+            'that is "you won" and "I lost". That is settled; the app checked it.'
         : r.reason === 'draw'
           ? 'The board filled up, so it is a draw.'
           : r.reason === 'resign'
-            ? 'They resigned, so you won.'
+            ? `${P} gave up, so ${M} (you) won. Said to ${P}, that is "I won", never "you won".`
             : 'The game ended.';
     lines.push(`The game is over. ${how} There is nothing to call now. Write only the line you say to them, in your own voice, or nothing.`);
   }
