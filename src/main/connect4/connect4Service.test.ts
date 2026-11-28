@@ -446,6 +446,7 @@ describe('Four in a Row turns', () => {
     const sent = JSON.stringify(chatCall.messages);
     expect(sent).not.toContain('1 2 3 4 5 6 7');
     expect(sent).toContain('column 1: empty; column 2: empty');
+    expect(sent).toContain('- Full columns: none; every other column still takes a piece.');
   });
 
   it('the say goes out before the piece lands; a chance to make four gets one reaction hop (T568)', async () => {
