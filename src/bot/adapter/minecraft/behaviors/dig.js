@@ -250,6 +250,11 @@ export async function digAction(args, bot, config) {
       // top of a tree, and the "nearest remaining log" from up there was the
       // next tree over. Scan down to the first solid block below the drop
       // (bounded) and walk to the air cell above it.
+      // 261128 (pass 67): shelter's pit digs (config.noDropWalk, never from
+      // the model's arguments). The drop falls down the shaft to whoever
+      // stands in it, and walking after it meant pathing into a 1x1 hole
+      // with the player at the bottom.
+      if (config?.noDropWalk === true) return `dug ${blockName}${harvest ? '' : harvestNote(blockName)}`
       try {
         let ly = dropPos.y
         for (let i = 0; i < 12; i++) {

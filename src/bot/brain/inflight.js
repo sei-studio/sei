@@ -127,6 +127,10 @@ export function getInFlightLineForSnapshot(entry, now = Date.now(), opts = {}) {
   const gatherLine = p ? heldGatherSuffix(p, opts?.inventory) : null
   if (gatherLine) {
     suffix = gatherLine
+  } else if (p && typeof p.text === 'string' && p.text) {
+    // 261128 (pass 67): an action that says where it is in its own words
+    // (shelter: digging for blocks, digging in, walls, roof).
+    suffix = ` — ${p.text}`
   } else if (p && typeof p.total === 'number') {
     const completed = (typeof p.placed === 'number') ? p.placed
                     : (typeof p.dug === 'number') ? p.dug

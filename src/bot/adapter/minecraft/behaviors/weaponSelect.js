@@ -13,6 +13,8 @@
 // 1000-1250ms and deal a fraction of their listed damage, so any sword beats
 // any axe and an axe beats bare hands.
 
+import { HOSTILE_MOBS } from './hostiles.js'
+
 // 261111: copper (1.21.9+) was missing, so a copper sword scored 0 and she
 // fought bare-handed with one in her bag.
 const SWORD_DAMAGE = {
@@ -135,6 +137,13 @@ export const dimLabel = (d) => DIM_LABEL[d] ?? d
  */
 export function noteLostWeapon(bot, lost, now = Date.now(), pos = null, dim = null) {
   if (!bot) return null
+  // 261128 (pass 67): every death spot, for "you have died N times by it".
+  const at = finitePos(pos)
+  if (at) {
+    const kept = (Array.isArray(bot._seiDeathSpots) ? bot._seiDeathSpots : []).filter((d) => now - d.at < DROP_DESPAWN_MS)
+    kept.push({ pos: at, at: now })
+    bot._seiDeathSpots = kept.slice(-12)
+  }
   const weapon = bestLostWeapon(lost)
   if (weapon) bot._seiLostWeapon = { weapon, at: now, droppedAt: now, pos: finitePos(pos), dim: dimName(dim) }
   else if (lostWeaponUnarmed(bot, now)) bot._seiLostWeapon = { ...bot._seiLostWeapon, at: now }
@@ -181,7 +190,44 @@ export function lostWeaponLine(bot, now = Date.now()) {
     ? ` @${d.pos.x},${d.pos.y},${d.pos.z}${d.dist != null ? ` (${d.dist} blocks from you)` : ''}`
     : ''
   const mins = d.minutesLeft === 1 ? 'about 1 more minute' : `about ${d.minutesLeft} more minutes`
+  // 261128 (pass 67): the mobs standing by it. combat_night-02-B (11-27):
+  // "weapon first" sent her back to a sword lying among the three zombies
+  // that had just killed her, five times in four minutes; the line only said
+  // where it was. Whether the spot is clear is the fact that decides it.
+  const guard = d.pos ? mobsNear(bot, d.pos, DROP_GUARD_M) : []
+  if (guard.length) {
+    const deaths = deathsNear(bot, d.pos, now)
+    const died = deaths > 1 ? ` You have died ${deaths} times by that spot in the last few minutes.` : ''
+    return `weapon: none. Your ${d.weapon} is on the ground where you died${where} for ${mins}, and ${countText(guard)} ${guard.length === 1 ? 'is' : 'are'} within ${DROP_GUARD_M} blocks of it.${died} With no weapon you cannot fight them there, so walking in for it now is how you die again. Keep yourself and the player away from them until they move off it or it is day; pickup with item "${d.weapon}" and maxDistance 32 walks onto it once nothing stands by it.`
+  }
   return `weapon: none. Your ${d.weapon} is on the ground where you died${where} for ${mins}. pickup with item "${d.weapon}" and maxDistance 32 walks onto it; if it is farther than that, goTo the spot first.`
+}
+
+// 261128 (pass 67): how close to the drop a hostile counts as standing by it.
+export const DROP_GUARD_M = 6
+
+function mobsNear(bot, pos, r) {
+  const out = []
+  for (const e of Object.values(bot?.entities ?? {})) {
+    if (!e || e === bot.entity || !HOSTILE_MOBS.has(e.name) || !e.position) continue
+    const p = e.position
+    if (![p.x, p.y, p.z].every(Number.isFinite)) continue
+    if (Math.hypot(p.x - pos.x, p.y - pos.y, p.z - pos.z) <= r) out.push(e.name)
+  }
+  return out
+}
+
+function deathsNear(bot, pos, now) {
+  const spots = Array.isArray(bot?._seiDeathSpots) ? bot._seiDeathSpots : []
+  return spots.filter((d) => now - d.at < DROP_DESPAWN_MS && Math.hypot(d.pos.x - pos.x, d.pos.y - pos.y, d.pos.z - pos.z) <= 8).length
+}
+
+/** "3 zombies", "a zombie and a skeleton", "2 zombies and a spider" */
+function countText(names) {
+  const by = new Map()
+  for (const n of names) by.set(n, (by.get(n) ?? 0) + 1)
+  const parts = [...by].map(([n, k]) => (k === 1 ? `${/^[aeiou]/.test(n) ? 'an' : 'a'} ${n}` : `${k} ${n}s`))
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]
 }
 
 /** True while she lost a weapon on death and owns none again. */
