@@ -286,7 +286,7 @@ export function chatReplyRule(longerHelp: boolean = LONGER_HELP_REPLIES): string
 export const TEACHING_LEAD =
   'If they are new to the game or ask you to teach them, teach them as you play. You know this game and how ' +
   'to play it well, whatever your persona is like, so the rules and tips you give are plain and correct, and ' +
-  'you never tell them you do not know the game yourself. How you say them is all yours: your words, your ' +
+  'you never say you are still learning it or not good at it. How you say them is all yours: your words, your ' +
   'attitude, your habits, the way you would explain anything to them. A longer explanation is still you ' +
   'talking, never a manual.';
 
@@ -296,8 +296,10 @@ export const TEACHING_LEAD =
  * facts list and the player lost the ship for 31 shots.
  */
 export const FACTS_WIN =
-  'They are new and can misremember the board; these facts are always right. When something they say does not ' +
-  'match them, do not go along with it: tell them, kindly and in your own way, what really happened.';
+  'These facts are always right. They are new and can misremember the board: when they say something about it ' +
+  'that these facts show is wrong (a cell they never fired at, a line that is not there), do not go along with ' +
+  'it, tell them kindly and in your own way what really happened. When they have it right, say so. Say it as ' +
+  'what you know, never as facts, a list or the app.';
 
 /**
  * The last line of a chat-reply turn block. Lyra, given the teaching

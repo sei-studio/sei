@@ -1279,13 +1279,20 @@ export function chatFactsText(f: {
     const shots = f.history.filter((h) => h.by === by).slice(-FACT_SHOTS).reverse();
     return shots.length ? shots.map((h) => shotText(h, whose, withCell)).join(', ') : 'none yet';
   };
-  const mine = sunk(f.yourShips);
-  const theirs = sunk(f.theirShips);
+  const fleetWords = (ships: ReadonlyArray<BATTLESHIPShip>, sinker: string): string => {
+    const gone = sunk(ships);
+    const afloat = ships.filter((sh) => !sh.sunk).map((sh) => sh.name);
+    if (gone.length === 0) return `none sunk yet, all ${ships.length || 5} afloat`;
+    return `${gone.join(', ')} sunk (${sinker} sank ${gone.length > 1 ? 'them' : 'it'}); ${afloat.join(', ') || 'none'} still afloat`;
+  };
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ${M}). ` +
       `Anything you say about the game has to match them. ${FACTS_WIN}`,
-    `- You sank: ${mine.length ? mine.map((n) => `my ${n}`).join(', ') : 'none of my ships yet'}.`,
-    `- I sank: ${theirs.length ? theirs.map((n) => `your ${n}`).join(', ') : 'none of your ships yet'}.`,
+    // Owner first (T568): "You sank: ..." / "I sank: ..." still came out
+    // flipped in 3 of 4 replies ("you haven't sunk anything of mine yet"
+    // right after "you sank my destroyer").
+    `- My ships, the ones you shoot at: ${fleetWords(f.yourShips, 'you')}.`,
+    `- Your ships, the ones I shoot at: ${fleetWords(f.theirShips, 'I')}.`,
     `- Your last shots at my ships, newest first: ${last('player', 'my', true)}.`,
     // No cells for its own shots: with them it kept tipping the player
     // toward its own hits on the player's board (probes v2 to v7).
@@ -1296,7 +1303,8 @@ export function chatFactsText(f: {
         : '.'),
     `- Cells you already fired at: ${playerFired || 'none yet'}.`,
     `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
-    `Only tip ${P} toward ${P}'s own hits on your ships that are still afloat; with none, there is no cell to tip.`,
+    `A tip for ${P} about where to shoot is only about ${P}'s own open hits above and the cells next to them; ` +
+      'with none, there is no cell to tip.',
   ].join('\n');
 }
 
