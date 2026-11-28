@@ -119,6 +119,37 @@ the idle tick after one ok 0/4 -> 3/4; guards (a new remark, "protect me",
 "come closer" from 22 blocks, "ok sure" to her offer) kept their reply or
 action. A shorter tail lost most of it (see the promptLibrary comment).
 
+**Shelter stage and ground pickups (261128, pass 68).** Two
+wrong_or_hallucinated sources in the 11-28 scorecard were facts missing
+from the snapshot, not prompt wording. (1) shelter() was not a progress
+action, so its in_flight line was only "shelter() started=8.5s ago" and
+she said "almost done with the walls" while it was still digging dirt. It
+now reports its stage as `{ text }` progress (pass 67's channel): digging
+for blocks (n of need), digging the pit (n of 3 deep), walls (n of cells in
+place, n to go), roof, doorway. Its own build/dig parts get a config without
+the hook, so their own counts never replace the stage. Wording matters: "no roof yet"
+on the walls stage made her say "walls are up but no roof" at 5 of 16, so
+it gives the count still to go. (2) A pickup with no mob-death or toss sign
+fell to the INVENTORY JUST CHANGED banner ("the player handed you
+something..."), and a dirt block picked up on a follow turned her own give
+around ("you're the one who gave me the logs"). itemSources tags such
+pickups `kind: 'ground'` (a quiet "picked up off the ground" line, out of
+the hand-over ledger), but only with a sign of it: a block_update to air in
+the cell the item spawned in, at a block-drop position, or no other player
+within 3 blocks. Anything else keeps the banner, so a toss we placed wrong
+still gets its thanks. Sources resolve at pickup, not spawn: on the 1.21.11
+eval server the item spawn packets came before entity_status 3 on a kill
+(vanilla die() drops loot first) and ~40ms before the block_update on a
+break, so spawn-time mob tagging (pass 54) had never matched live. A /give
+has no pickup, so it still hits the banner.
+`scripts/quality-eval/pass68-probe.mjs`: "hows the shelter coming" false
+progress 7/7 -> 0/8; reversed give looked like 8/16 -> 3/16, but reruns after the
+pass 67 merge pooled to banner 16/48 vs ground line 22/64: no measurable
+effect, it is her "you're the one who..." comeback habit (a "from you to
+them" ledger wording did not move it either). Echoing a tease back ("lol ur
+kinda slow yourself") was 5/8 in the probe and is left alone (pass 11 is
+the last change there).
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 

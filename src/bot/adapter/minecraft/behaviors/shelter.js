@@ -204,7 +204,7 @@ export function supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, d
  * Dig up to `want` building blocks from `cands`, nearest to her first, within
  * the time budget. Returns how many reached her bag.
  */
-async function digForBlocks(bot, config, material, want, cands, digBlock) {
+async function digForBlocks(bot, config, material, want, cands, digBlock, onDug = null) {
   const signal = config?.signal
   const end = Date.now() + SUPPLY_BUDGET_MS
   const left = cands.slice()
@@ -228,8 +228,7 @@ async function digForBlocks(bot, config, material, want, cands, digBlock) {
     const r = await digBlock({ x: c.x, y: c.y, z: c.z }, bot, config)
     if (r === 'aborted' || signal?.aborted) return { got, aborted: true }
     const gain = blocksOnHand(bot, material) - before
-    if (gain > 0) { got += gain; fails = 0 } else fails++
-    try { config?.onProgress?.({ text: `digging blocks for it first: ${got} of ${want} dug so far, nothing is built yet` }) } catch {}
+    if (gain > 0) { got += gain; fails = 0; onDug?.() } else fails++
   }
   return { got, stop }
 }
@@ -412,10 +411,11 @@ async function pitShelter(bot, config, deps, g) {
   // down the shaft to them, so she gets the roof blocks first.
   const notes = []
   if (!inside.me && blocksOnHand(bot, material) < roofNeed) {
-    report(`digging ${roofNeed - blocksOnHand(bot, material)} block(s) for the roof first, nothing is dug in yet`)
+    const roofTick = () => report(`digging up blocks for the pit's roof first (${Math.min(blocksOnHand(bot, material), roofNeed)} of the ${roofNeed} it needs so far). Nothing is dug in yet and there is no roof`)
+    roofTick()
     const before = new Map(buildingKinds(bot, material).map(k => [k.name, k.n]))
     const cands = supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, doorX: cx })
-    const dug = cands.length ? await digForBlocks(bot, config, material, roofNeed - blocksOnHand(bot, material) + 1, cands, deps.digBlock ?? digToolAction) : { got: 0 }
+    const dug = cands.length ? await digForBlocks(bot, config, material, roofNeed - blocksOnHand(bot, material) + 1, cands, deps.digBlock ?? digToolAction, roofTick) : { got: 0 }
     const what = dugText(bot, material, before)
     if (dug.aborted) return `shelter stopped while digging blocks for its roof, nothing is dug in yet${what ? ` (dug ${what} so far)` : ''}`
     if (what) notes.push(`dug ${what} nearby for the roof`)
@@ -425,6 +425,18 @@ async function pitShelter(bot, config, deps, g) {
   // the cell under a body goes last in its layer.
   const total = plan.cells.length
   let done = 0
+  // 261128 (quality pass 68): how deep the pit is so far, counted from the
+  // ground (a layer counts once every inner cell of it is open).
+  const pitDepth = () => {
+    let d = 0
+    for (let k = 1; k <= PIT_DEPTH; k++) {
+      if (inner.every(({ x, z }) => !isOccupied(bot, { x, y: baseY - k, z }))) d = k
+      else break
+    }
+    return d
+  }
+  const pitTick = (n, of) => `digging the pit (${pitDepth()} of ${PIT_DEPTH} deep so far, ${n} of ${of} blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet`
+  if (total) report(pitTick(0, total))
   const layers = [...new Set(plan.cells.map(c => c.y))].sort((a, b) => b - a)
   for (const y of layers) {
     const row = plan.cells.filter(c => c.y === y)
@@ -440,7 +452,7 @@ async function pitShelter(bot, config, deps, g) {
         return `no shelter built: digging in stopped at ${c.x},${c.y},${c.z} (${typeof r === 'string' ? r : 'the dig failed'}), ${done} of ${total} pit blocks dug and no roof on it`
       }
       done++
-      report(`digging in: ${done} of ${total} blocks of the pit dug, no roof on it yet`)
+      report(pitTick(done, total))
     }
   }
   await waitOnGround(bot, signal)
@@ -458,7 +470,7 @@ async function pitShelter(bot, config, deps, g) {
   if (blocksOnHand(bot, material) === 0) {
     return `no roof put on: the pit at ${where} is dug ${PIT_DEPTH} deep but you have no blocks left for its roof (${roofNeed} needed). Pick up the dug blocks or dig one more, then call shelter again.`
   }
-  report('digging in: the pit is dug, putting the roof on')
+  report(`the pit is dug ${PIT_DEPTH} deep and it is putting the roof on. It is not closed yet`)
   await waitClearOf(bot, innerColumns(minX, maxX, minZ, maxZ).map(({ x, z }) => ({ x, y: plan.roofY, z })), signal)
   const roof = await buildPart(bot, { ...config, onProgress: undefined }, { from: roofFrom, to: roofTo }, material, false)
   if (isAborted(roof.res)) return `shelter stopped while roofing the pit at ${where}, it is not closed yet (roof: ${roof.res})`
@@ -479,11 +491,18 @@ async function pitShelter(bot, config, deps, g) {
 export async function shelterAction(args, bot, config, deps = {}) {
   const walk = deps.goTo ?? realGoTo
   const digBlock = deps.digBlock ?? digToolAction
-  const signal = config?.signal
-  if (signal?.aborted) return 'aborted'
   // 261128 (pass 67): the in_flight line said only "shelter running" while it
   // dug for a minute, and she told the player the walls were going up.
-  const report = (text) => { try { config?.onProgress?.({ text }) } catch {} }
+  // 261128 (quality pass 68): same in the 11-28 scorecard (night_social-02,
+  // "im almost done with the walls" with no wall placed). Every stage says
+  // what is NOT done yet. The parts it is made of (dig, build) report their
+  // own progress in other shapes ("broke 0 of 2" for the doorway), so they get
+  // a config without the hook and the shelter reports for them.
+  const onProgress = typeof config?.onProgress === 'function' ? config.onProgress : null
+  const report = (text) => { if (onProgress) { try { onProgress({ text }) } catch { /* never break the build */ } } }
+  if (onProgress) config = { ...config, onProgress: undefined }
+  const signal = config?.signal
+  if (signal?.aborted) return 'aborted'
 
   const size = args?.size ?? 3
   const material = args?.material ?? 'cobblestone'
@@ -529,8 +548,9 @@ export async function shelterAction(args, bot, config, deps = {}) {
     const before = new Map(buildingKinds(bot, material).map(k => [k.name, k.n]))
     const cands = supplyCandidates(bot, { cx, cz, baseY, minX, maxX, minZ, maxZ, doorX })
     const want = need - have + SUPPLY_MARGIN
-    report(`digging ${want} blocks for it out of the ground nearby first (about 2s each), nothing is built yet; what you hold is on your inventory line`)
-    const dug = cands.length ? await digForBlocks(bot, config, material, want, cands, digBlock) : { got: 0, stop: 'none_left' }
+    const supplyTick = () => report(`still digging up blocks to build it with, about 2s each (${Math.min(blocksOnHand(bot, material), need)} of the ${need} it needs so far). Nothing is built yet: no wall or roof is placed`)
+    if (cands.length) supplyTick()
+    const dug = cands.length ? await digForBlocks(bot, config, material, want, cands, digBlock, supplyTick) : { got: 0, stop: 'none_left' }
     supplyStop = dug.stop
     wentDigging = cands.length > 0
     const dugWhat = dugText(bot, material, before)
@@ -584,18 +604,24 @@ export async function shelterAction(args, bot, config, deps = {}) {
     return `no shelter built yet: ${who} is standing where a wall goes (${where}), and a block cannot go where someone stands. Ask ${who} to step into the middle with you or a few blocks away, then build it again.`
   }
 
-  const partConfig = (part) => ({
-    ...config,
-    onProgress: (p) => {
-      if (Number.isFinite(p?.placed) && Number.isFinite(p?.total)) report(`building the ${part}: ${p.placed} of ${p.total} ${part} cells placed so far`)
-    },
-  })
   // 3. Four hollow walls across the full height range, then a solid roof.
   // 261102 (pass 36): walls that are already there (she stands in a pit or
   // against a hillside) are a finished part, not "built NOTHING".
+  // Cells of a part in place right now (placed, or solid ground already).
+  const partTick = (stage, from, to, hollow) => {
+    const cells = enumerateBuildCells(from, to, hollow).length
+    const tick = () => {
+      const filled = Math.max(0, cells - cellsNeeded(bot, from, to, hollow))
+      report(stage === 'walls'
+        ? `placing the walls (${filled} of the ${cells} wall blocks are in place, ${cells - filled} still to go, and the roof goes on after them). It is not finished and keeps nothing out yet`
+        : `the walls are up and it is putting on the roof (${filled} of ${cells} roof blocks in place). It is not finished yet`)
+    }
+    tick()
+    return onProgress ? { ...config, onProgress: tick } : config
+  }
   const walls = wallNeed === 0
     ? { res: allThere(wallCells.length), used: [] }
-    : await buildPart(bot, partConfig('walls'), { from: wallFrom, to: wallTo }, material, true)
+    : await buildPart(bot, partTick('walls', wallFrom, wallTo, true), { from: wallFrom, to: wallTo }, material, true)
   const wallsRes = walls.res
   if (isAborted(wallsRes)) return abortedAt('walls', wallsRes)
   // 261011: a shelter with no walls is not a shelter. The result used to read
@@ -606,7 +632,7 @@ export async function shelterAction(args, bot, config, deps = {}) {
 
   const roof = roofNeed === 0
     ? { res: allThere(size * size), used: [] }
-    : await buildPart(bot, partConfig('roof'), { from: roofFrom, to: roofTo }, material, false)
+    : await buildPart(bot, partTick('roof', roofFrom, roofTo, false), { from: roofFrom, to: roofTo }, material, false)
   const roofRes = roof.res
   if (isAborted(roofRes)) return abortedAt('roof', roofRes, wallsRes)
   if (roof.used.some(k => k !== material)) notes.push(`roof in ${roof.used.join(' and ')}`)
@@ -614,6 +640,7 @@ export async function shelterAction(args, bot, config, deps = {}) {
   // 4. Carve a one-block-wide, two-tall doorway out of the front (min-Z) wall,
   //    centered on the footprint, so the bot can walk in and out.
   const inMiddleBeforeDoor = !awayFromMiddle()
+  report('the walls and roof are up and it is cutting the doorway')
   const doorRes = await digAction(
     { x: doorX, y: baseY, z: minZ, to: { x: doorX, y: baseY + 1, z: minZ } },
     bot,

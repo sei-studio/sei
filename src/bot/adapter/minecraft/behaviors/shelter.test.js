@@ -478,6 +478,49 @@ describe('shelterAction: her own body and walls already there (261102)', () => {
   })
 })
 
+// 261128 (quality pass 68): the in_flight line read "shelter() started=8.5s
+// ago" and nothing else; she said "im almost done with the walls" while it
+// was still digging dirt. The shelter reports its own stage instead.
+describe('shelterAction: reports its stage (261128, pass 68)', () => {
+  it('reports digging, then walls, roof and doorway, and keeps the hook from its parts', async () => {
+    const inv = []
+    let n = 0
+    inv.push({ name: 'dirt', get count() { return n } })
+    const holes = new Set()
+    // Rock under the middle (no pickaxe), so it cannot dig in.
+    const bot = makeBot({ inv, extra: { '0,61,0': 'stone' } })
+    const base = bot.blockAt.bind(bot)
+    bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
+    const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); n += 1; return 'dug grass_block' })
+    const seen = []
+    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, bot, { onProgress: (p) => seen.push(p.text) }, { digBlock: dig })
+    expect(res).toMatch(/^built shelter 3x3x2/)
+    expect(seen[0]).toBe('still digging up blocks to build it with, about 2s each (0 of the 25 it needs so far). Nothing is built yet: no wall or roof is placed')
+    expect(seen).toContain('still digging up blocks to build it with, about 2s each (25 of the 25 it needs so far). Nothing is built yet: no wall or roof is placed')
+    expect(seen).toContain('placing the walls (0 of the 16 wall blocks are in place, 16 still to go, and the roof goes on after them). It is not finished and keeps nothing out yet')
+    expect(seen).toContain('the walls are up and it is putting on the roof (0 of 9 roof blocks in place). It is not finished yet')
+    expect(seen.at(-1)).toBe('the walls and roof are up and it is cutting the doorway')
+    // Stage order: digging before walls before roof before door.
+    const stage = (t) => (t.startsWith('still digging') ? 'supply' : t.startsWith('placing the walls') ? 'walls' : t.startsWith('the walls are up') ? 'roof' : 'door')
+    expect([...new Set(seen.map(stage))]).toEqual(['supply', 'walls', 'roof', 'door'])
+    // The parts get a progress hook that reports in the shelter's words.
+    const wallsCfg = buildAction.mock.calls.find((c) => c[0].hollow === true)[2]
+    seen.length = 0
+    wallsCfg.onProgress({ placed: 3, skipped: 0, total: 16, currentY: 64 })
+    expect(seen).toEqual(['placing the walls (0 of the 16 wall blocks are in place, 16 still to go, and the roof goes on after them). It is not finished and keeps nothing out yet'])
+    // Its digs (supply, doorway) never see the hook ("broke 0 of 2" would
+    // replace the stage on the line).
+    expect(dig.mock.calls[0][2]?.onProgress).toBeUndefined()
+    expect(digAction.mock.calls[0][2]?.onProgress).toBeUndefined()
+  })
+
+  it('works without a progress hook', async () => {
+    const res = await shelterAction({ size: 3 }, makeBot(), {})
+    expect(res).toMatch(/^built shelter 3x3x2/)
+    expect(buildAction.mock.calls[0][2]?.onProgress).toBeUndefined()
+  })
+})
+
 describe('shelterAction: digs in when short of blocks (261128, pass 67)', () => {
   // Flat grass; a dug cell turns to air, and whoever stands on it drops into it.
   function pitWorld({ inv = [], extra = {}, me = { x: 0.5, z: 0.5 }, alex = null } = {}) {
@@ -615,7 +658,12 @@ describe('shelterAction: digs in when short of blocks (261128, pass 67)', () => 
     const w = pitWorld()
     const seen = []
     await shelterAction({ size: 3 }, w.bot, { onProgress: (p) => seen.push(p.text) }, { digPit: w.digPit, digBlock: w.digBlock })
-    expect(seen).toContain('digging in: 1 of 3 blocks of the pit dug, no roof on it yet')
-    expect(seen).toContain('digging in: the pit is dug, putting the roof on')
+    // 261128 (pass 68): the pit says how deep it is, never walls going up.
+    expect(seen[0]).toBe('digging the pit (0 of 3 deep so far, 0 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen).toContain('digging the pit (1 of 3 deep so far, 1 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen).toContain('digging the pit (3 of 3 deep so far, 3 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen.at(-1)).toBe('the pit is dug 3 deep and it is putting the roof on. It is not closed yet')
+    expect(seen.some((t) => /wall blocks|walls are up/.test(t))).toBe(false)
+    expect(w.digPit.mock.calls.every(([, , cfg]) => cfg.onProgress === undefined)).toBe(true)
   })
 })

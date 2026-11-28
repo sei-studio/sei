@@ -178,7 +178,7 @@ export function describeInventoryGain(gains) {
   // rotten flesh lol" after her own zombie kill), and a toss names who.
   const groups = new Map()
   for (const g of list) {
-    const k = g.from?.kind === 'mob' || g.from?.kind === 'player' ? `${g.from.kind}:${g.from.name}` : ''
+    const k = g.from?.kind === 'mob' || g.from?.kind === 'player' || g.from?.kind === 'ground' ? `${g.from.kind}:${g.from.name ?? ''}` : ''
     if (!groups.has(k)) groups.set(k, { from: k ? g.from : null, items: [] })
     groups.get(k).items.push(g)
   }
@@ -190,6 +190,7 @@ export function describeInventoryGain(gains) {
     const joined = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
     if (from?.kind === 'mob') parts.push(`you picked up ${joined} the ${from.name} dropped when it died`)
     else if (from?.kind === 'player') parts.push(`${from.name} tossed you ${joined}`)
+    else if (from?.kind === 'ground') parts.push(`you picked up ${joined} off the ground`)
     else parts.push(`${joined} came into your inventory`)
   }
   return parts.join('; ')
@@ -228,7 +229,7 @@ export function createInventoryGainRecorder({ record, spokeBetween, now = () => 
     if (run) { try { spoke = !!spokeBetween(run.startAt, t) } catch { spoke = true } }
     if (!run || spoke || t - run.lastAt > windowMs) run = { id: ++seq, startAt: t, lastAt: t, counts: new Map() }
     for (const g of list) {
-      const from = g.from?.kind && g.from?.name ? { kind: g.from.kind, name: g.from.name } : null
+      const from = g.from?.kind && (g.from?.name || g.from.kind === 'ground') ? { kind: g.from.kind, name: g.from.name ?? '' } : null
       const k = `${from ? `${from.kind}:${from.name}` : ''}|${g.item}`
       const prev = run.counts.get(k)
       run.counts.set(k, { item: g.item, from, n: (prev?.n ?? 0) + g.n })
@@ -359,7 +360,8 @@ export function createHandOverLedger() {
   function receivedItems(gains) {
     for (const g of Array.isArray(gains) ? gains : []) {
       // 261113 (pass 54): a mob's drops she picked up are hers, like a gather.
-      if (g?.from?.kind === 'mob') continue
+      // 261128 (pass 68): so is what she picked up off the ground.
+      if (g?.from?.kind === 'mob' || g?.from?.kind === 'ground') continue
       if (g && typeof g.item === 'string' && g.item && Number.isFinite(g.n) && g.n > 0) addCount(received, g.item, g.n)
     }
   }
