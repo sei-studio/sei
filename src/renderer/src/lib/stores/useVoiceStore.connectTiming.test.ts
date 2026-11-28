@@ -147,6 +147,25 @@ describe('call connect timing through startCall (261127, T563)', () => {
     expect(c).not.toHaveProperty('first_line_ms');
   });
 
+  it('the three call-start reads run together (261128, T571)', async () => {
+    const sei = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window.sei;
+    const slow = <T,>(v: T) => vi.fn(() => new Promise<T>((r) => setTimeout(() => r(v), 100)));
+    sei.getConfig = slow({ ai_backend_kind: 'cloud-proxy' });
+    sei.voiceElevenKeyStatus = slow({ present: false });
+    sei.speechPackStatus = slow({ packs: {} });
+    const { useVoiceStore } = await import('./useVoiceStore');
+    const { notifyCompanionText } = await import('../voice/voiceBridge');
+    const dial = useVoiceStore.getState().startCall('sui');
+    await vi.advanceTimersByTimeAsync(900);
+    notifyCompanionText('sui', 'hey.', {});
+    await vi.advanceTimersByTimeAsync(2000);
+    await dial;
+    useVoiceStore.getState().endCall('user_hangup');
+    const c = hangUpReport('sui')?.connect as Record<string, number>;
+    // One 100ms round trip after the permission check, not three in a row.
+    expect(c.setup_reads_ms - c.mic_permission_ms).toBe(100);
+  });
+
   it('a call hung up while dialing reports no connect timing (and no connectedMs)', async () => {
     const { useVoiceStore } = await import('./useVoiceStore');
     void useVoiceStore.getState().startCall('sui');

@@ -34,7 +34,9 @@ describe('call connect clock (261127, T563)', () => {
     clock.greetLine('sui', wallAt(300));
     at(1980);
     clock.connected({ minRingMs: 1300, greetingTimedOut: false });
+    clock.mark('opener_tts_ms'); // requested at connect (T571)
     at(2990);
+    clock.mark('opener_tts_ms'); // the queue handoff's mark does not move it
     clock.mark('opener_queued_ms');
     at(3500);
     expect(clock.audible()).toBe(true);
@@ -47,6 +49,7 @@ describe('call connect clock (261127, T563)', () => {
       greet_request_ms: 300,
       greet_ready_ms: 1900,
       connect_ms: 1980,
+      opener_tts_ms: 1980,
       opener_queued_ms: 2990,
       first_line_ms: 3500,
       gate: 'greeting',
@@ -96,12 +99,14 @@ describe('call connect clock (261127, T563)', () => {
     at(9000);
     clock.closeOpener(); // the player said something first
     clock.greetLine('sui');
+    clock.mark('opener_tts_ms');
     clock.mark('opener_queued_ms');
     expect(clock.audible()).toBe(false);
     const t = clock.take('sui');
     expect(t?.connect_ms).toBe(1500);
     expect(t).not.toHaveProperty('first_line_ms');
     expect(t).not.toHaveProperty('opener_queued_ms');
+    expect(t).not.toHaveProperty('opener_tts_ms');
     expect(t).not.toHaveProperty('greet_ready_ms');
   });
 
@@ -165,6 +170,7 @@ describe('voice_call_ended connect props', () => {
         greet_request_ms: 300,
         greet_ready_ms: 1900,
         connect_ms: 1980,
+        opener_tts_ms: 1980,
         opener_queued_ms: 2990,
         first_line_ms: 3500,
         gate: 'greeting',
@@ -179,6 +185,7 @@ describe('voice_call_ended connect props', () => {
       connect_greet_request_ms: 300,
       connect_greet_ready_ms: 1900,
       connect_ms: 1980,
+      connect_opener_tts_ms: 1980,
       connect_opener_queued_ms: 2990,
       first_line_ms: 3500,
       connect_gate: 'greeting',

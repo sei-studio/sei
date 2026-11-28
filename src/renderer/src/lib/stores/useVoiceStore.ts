@@ -53,7 +53,7 @@ import { voicePitchRate } from '@shared/voicePitch';
 import type { VoiceTtsNoticePush } from '@shared/ipc';
 import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
-import { createSentenceTts } from '../voice/sentenceTts';
+import { createSentenceTts, sentenceRequests } from '../voice/sentenceTts';
 import {
   createVoiceFailNoticeGate,
   genericTtsFailureKind,
@@ -401,7 +401,7 @@ function logConnectTiming(): void {
     `[sei/voice] call_connect first_line=${f(t.first_line_ms)} connect=${f(t.connect_ms)} gate=${f(t.gate)} ` +
       `mic_permission=${f(t.mic_permission_ms)} setup_reads=${f(t.setup_reads_ms)} mic_open=${f(t.mic_open_ms)} ` +
       `stt_ready=${f(t.stt_ready_ms)} greet_request=${f(t.greet_request_ms)} greet_ready=${f(t.greet_ready_ms)} ` +
-      `opener_queued=${f(t.opener_queued_ms)} greet_path=${f(t.greet_path)} stt_local=${f(t.stt_local)}`,
+      `opener_tts=${f(t.opener_tts_ms)} opener_queued=${f(t.opener_queued_ms)} greet_path=${f(t.greet_path)} stt_local=${f(t.stt_local)}`,
   );
 }
 /** When each participant's audio went live — basis for their connectedMs row. */
@@ -442,7 +442,27 @@ let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
-let pendingCompanionLines: Array<{ characterId: string; text: string; seq: number; ctx: SpokenLineContext }> = [];
+let pendingCompanionLines: PendingCompanionLine[] = [];
+/**
+ * 261128 (T571, O5 speed): a buffered line's TTS, requested before the line is
+ * handed to the audio queue. Once the call is live, the buffered opener's
+ * synthesis starts at once (startTtsPrefetch) instead of after the pickup beat
+ * or a call scene's walk-on, so it is ready when the beat ends. The beat, the
+ * ring and the order lines play in are unchanged; only the request moves
+ * earlier. `route` is the path speakCompanionLine would pick for the line (a
+ * prefetch for another route is discarded and the line fetched as before);
+ * `sentences` holds only the FIRST sentence's clip (sentenceTts.first).
+ */
+type TtsPrefetch =
+  | { route: 'stream'; started: Promise<{ streamId: string }>; discarded: boolean }
+  | { route: 'clip' | 'sentences'; started: Promise<ArrayBuffer>; discarded: boolean };
+type PendingCompanionLine = {
+  characterId: string;
+  text: string;
+  seq: number;
+  ctx: SpokenLineContext;
+  prefetch?: TtsPrefetch;
+};
 const MAX_PENDING_COMPANION_LINES = 12;
 /** Auto-release for a scene intro hold that never reports arrival. */
 let introHoldTimer = 0;
@@ -476,6 +496,11 @@ let stopAmbience: StopFn | null = null;
 type LineStreamHandle = TtsStreamHandle & { error(msg: string): void };
 const ttsStreams = new Map<string, LineStreamHandle>();
 const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; error?: string }>>();
+/** 261128 (T571): streams of prefetched lines that will never be spoken (hung
+ * up during the pickup beat, the speaker left). Main has no cancel for a TTS
+ * stream, so its remaining pushes are dropped here instead of piling up as
+ * orphans. An id leaves on its terminal push. */
+const ttsDiscarded = new Set<string>();
 /** Module-level listener handles, torn down on HMR dispose (see module foot). */
 let unsubUiMirror: (() => void) | null = null;
 let offTtsChunk: (() => void) | null = null;
@@ -687,8 +712,9 @@ const RING_WITHOUT_MIC_MS = 600;
 // dead air. We poll for the buffered greeting up to this cap, then connect
 // anyway so a slow/empty greeting can't hang the dial forever.
 const GREETING_READY_CAP_MS = 5000;
-// Once connected, hold a beat before the first word — a real "pickup" pause, and
-// it gives the greeting's TTS first-byte a moment to land.
+// Once connected, hold a beat before the first word — a real "pickup" pause.
+// 261128 (T571): the opener's TTS is requested at connect, so it synthesizes
+// during this beat and plays as it ends (prefetchPendingTts).
 const CONNECT_SPEAK_DELAY_MS = 1000;
 /**
  * 260730: hard cap on a call scene's intro hold. The scene backs its arrival
@@ -949,12 +975,120 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     set({ lastSpoken: unvoicedRun.caption, lastSpokenId: characterId, voiceFailing: true });
   }
 
+  /** The TTS path `text` takes on this call: Kokoro sentence by sentence, a
+   * stream, or one whole clip. speakCompanionLine branches on it and a
+   * prefetch (startTtsPrefetch) must have taken the same one. */
+  function ttsRouteFor(text: string): TtsPrefetch['route'] {
+    if (kokoroTtsCall && sentenceTts && queue) return 'sentences';
+    const canStream =
+      typeof sei.voiceTtsStream === 'function' &&
+      typeof sei.onVoiceTtsChunk === 'function' &&
+      // Local TTS (260816): whole WAV clips only — see localTtsCall. Fish
+      // Audio (261103) is mp3 and streams.
+      (!localTtsCall || fishTtsCall);
+    // 260726: a TINY line does not stream. Streaming exists to cut time-to-
+    // first-audio on a long clip, and its cost is that playback starts on a
+    // buffer that is still filling. On a clip of a few hundred ms there is
+    // never a lead to absorb a network hiccup, and the underruns land at the
+    // only two places available — the first frames and the last ones before
+    // endOfStream. Symptom: "are you" and "you" came out choppy at both ends
+    // while full sentences were clean. Under the threshold the whole clip is
+    // fetched, then played from one Blob with its silence padding already baked
+    // in: no MSE, no underrun, and the latency given up is only the tail of an
+    // already-short synthesis.
+    //
+    // 260731: what made this ACUTE was pitched playback — every pitched
+    // character ran playbackRate > 1 (Sui: 1.224) with preservesPitch off, so
+    // the renderer drained the buffer faster than the network filled it. The
+    // shift is local and pace-preserving now (pitchBus.ts), so clips play at
+    // rate 1 and the drain is back to real time. The threshold stays: a short
+    // clip has no lead to spare either way, and the latency it trades is small.
+    return canStream && text.length >= STREAM_MIN_CHARS && queue ? 'stream' : 'clip';
+  }
+
+  /** What main's TTS is asked for `text`: the line plus its place in its reply
+   * (`more` / `prev`). The rest of the context is renderer bookkeeping. */
+  function ttsRequestFor(
+    characterId: string,
+    text: string,
+    ctx: SpokenLineContext,
+  ): { characterId: string; text: string; more?: boolean; prev?: string } {
+    const { turn: _turn, confirmId: _confirmId, ambientCapturedAt: _captured, replyTiming: _timing, ...ttsCtx } = ctx;
+    return { characterId, text, ...ttsCtx };
+  }
+
+  /** 261128 (T571): start a buffered line's TTS now, before it is spoken (see
+   * TtsPrefetch). undefined = nothing to start early. */
+  function startTtsPrefetch(line: PendingCompanionLine, first: boolean): TtsPrefetch | undefined {
+    // The backseat staleness gate may drop the line unsynthesized at speak
+    // time, and with no queue nothing is played: neither is worth a request.
+    if (!queue || line.ctx.ambientCapturedAt !== undefined) return undefined;
+    const route = ttsRouteFor(line.text);
+    const req = ttsRequestFor(line.characterId, line.text, line.ctx);
+    let prefetch: TtsPrefetch;
+    if (route === 'stream') {
+      prefetch = { route, started: sei.voiceTtsStream(req), discarded: false };
+    } else if (route === 'clip') {
+      prefetch = { route, started: sei.voiceTts(req), discarded: false };
+    } else {
+      // On-device Kokoro synthesizes one sentence at a time (sentenceTts's
+      // tail), so only the opener's first sentence starts early: more at once
+      // would only compete for the same CPU.
+      const firstSentence = first ? sentenceRequests(req)[0] : undefined;
+      if (!firstSentence) return undefined;
+      prefetch = { route, started: sei.voiceTts(firstSentence), discarded: false };
+    }
+    // Consumed (and its failure reported) when the line is spoken; until then
+    // a rejection must not surface as unhandled.
+    (prefetch.started as Promise<unknown>).catch(() => {});
+    connectClock.mark('opener_tts_ms');
+    return prefetch;
+  }
+
+  /** A prefetched line that will not be spoken: nothing of it may ever play.
+   * Its clip is simply never used; a stream's chunks are dropped as they
+   * arrive (ttsDiscarded). Main has no cancel, so the synthesis itself runs
+   * to its end. */
+  function discardTtsPrefetch(p: TtsPrefetch | undefined): void {
+    if (!p || p.discarded) return;
+    p.discarded = true;
+    if (p.route !== 'stream') return;
+    p.started.then(
+      ({ streamId }) => {
+        ttsOrphans.delete(streamId);
+        if (ttsStreams.has(streamId)) return; // already attached to a line
+        if (ttsDiscarded.size > 32) ttsDiscarded.clear();
+        ttsDiscarded.add(streamId);
+      },
+      () => {},
+    );
+  }
+
+  /** Drop the buffered lines (call start / end), and any TTS they started. */
+  function dropPendingCompanionLines(): void {
+    for (const line of pendingCompanionLines) discardTtsPrefetch(line.prefetch);
+    pendingCompanionLines = [];
+  }
+
+  /** Once live, every buffered line without a prefetch starts its TTS. */
+  function prefetchPendingTts(): void {
+    pendingCompanionLines.forEach((line, i) => {
+      if (line.prefetch || !get().participants.includes(line.characterId)) return;
+      line.prefetch = startTtsPrefetch(line, i === 0);
+    });
+  }
+
   /** Synthesize + display one companion line on the LIVE call, tagged with the
    * speaker so the queue can report per-companion speaking state. `ctx` places
    * the line inside its own reply (previous sibling / whether one follows),
    * which is what main conditions the clip's opening and closing contour on
    * (see ttsContextFor). */
-  function speakCompanionLine(characterId: string, text: string, ctx: SpokenLineContext = {}): void {
+  function speakCompanionLine(
+    characterId: string,
+    text: string,
+    ctx: SpokenLineContext = {},
+    prefetch?: TtsPrefetch,
+  ): void {
     const mySession = session;
     if (replyClockAt !== null) {
       console.log(
@@ -966,6 +1100,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // 261123: the turn's first line also times its first audio bytes (and
     // carries main's LLM stamps on ctx.replyTiming); see replyClock.ts.
     const firstAudio = replyClock.lineQueued(ctx.replyTiming);
+    connectClock.mark('opener_tts_ms'); // unless a prefetch already asked
     connectClock.mark('opener_queued_ms'); // only the call's first line counts
     // Caption is set when this clip reaches the playhead (see the audio queue's
     // onSpeakingChange below), NOT here at enqueue time — otherwise a multi-line
@@ -1054,29 +1189,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       maybeFinishRemoteEnd();
     };
 
-    const canStream =
-      typeof sei.voiceTtsStream === 'function' &&
-      typeof sei.onVoiceTtsChunk === 'function' &&
-      // Local TTS (260816): whole WAV clips only — see localTtsCall. Fish
-      // Audio (261103) is mp3 and streams.
-      (!localTtsCall || fishTtsCall);
-    // 260726: a TINY line does not stream. Streaming exists to cut time-to-
-    // first-audio on a long clip, and its cost is that playback starts on a
-    // buffer that is still filling. On a clip of a few hundred ms there is
-    // never a lead to absorb a network hiccup, and the underruns land at the
-    // only two places available — the first frames and the last ones before
-    // endOfStream. Symptom: "are you" and "you" came out choppy at both ends
-    // while full sentences were clean. Under the threshold the whole clip is
-    // fetched, then played from one Blob with its silence padding already baked
-    // in: no MSE, no underrun, and the latency given up is only the tail of an
-    // already-short synthesis.
-    //
-    // 260731: what made this ACUTE was pitched playback — every pitched
-    // character ran playbackRate > 1 (Sui: 1.224) with preservesPitch off, so
-    // the renderer drained the buffer faster than the network filled it. The
-    // shift is local and pace-preserving now (pitchBus.ts), so clips play at
-    // rate 1 and the drain is back to real time. The threshold stays: a short
-    // clip has no lead to spare either way, and the latency it trades is small.
     // `turn` is queue bookkeeping (drop a superseded turn's unplayed lines),
     // never a synthesis parameter: main's TTS zod would strip it silently, but
     // splitting here keeps the request honest.
@@ -1086,6 +1198,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // `ambientCapturedAt` (261010) is the staleness gate's input, never sent.
     // `replyTiming` (261123) is reply_latency bookkeeping, never sent either.
     const { turn, confirmId, ambientCapturedAt, replyTiming: _replyTiming, ...ttsCtx } = ctx;
+    // 261128 (T571): a prefetch started for this line is used only when it
+    // took the same route; otherwise it is dropped and the line fetched now.
+    const route = ttsRouteFor(text);
+    const pre = prefetch && !prefetch.discarded && prefetch.route === route ? prefetch : undefined;
+    if (prefetch && !pre) discardTtsPrefetch(prefetch);
     const stale = ambientCapturedAt !== undefined ? staleGate(text, ambientCapturedAt) : undefined;
     const onDone = confirmId
       ? (completed: boolean): void => {
@@ -1095,12 +1212,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     if (!queue) onDone?.(false);
     // Already stale on arrival (it sat behind a slow turn): never synthesized.
     if (stale?.('arrival')) {
+      discardTtsPrefetch(pre);
       onDone?.(false);
       settleTts();
       return;
     }
-    if (kokoroTtsCall && sentenceTts && queue) {
+    if (route === 'sentences' && sentenceTts) {
       void sentenceTts({ characterId, text, ...ttsCtx }, {
+        ...(pre?.route === 'sentences' ? { first: pre.started } : {}),
         rate: pitchRateOf(characterId),
         turn,
         onDone: lineDone,
@@ -1109,8 +1228,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }).finally(settleTts);
       return;
     }
-    const worthStreaming = text.length >= STREAM_MIN_CHARS;
-    if (canStream && worthStreaming && queue) {
+    if (route === 'stream' && queue) {
       const slot = queue.enqueueStream(characterId, text, pitchRateOf(characterId), {
         turn,
         onDone: lineDone,
@@ -1130,8 +1248,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         fail: () => slot.fail(),
         error: (msg) => failLine(msg, () => slot.fail()),
       };
-      void sei
-        .voiceTtsStream({ characterId, text, ...ttsCtx })
+      void (pre?.route === 'stream' ? pre.started : sei.voiceTtsStream({ characterId, text, ...ttsCtx }))
         .then(({ streamId }) => {
           if (session !== mySession) {
             handle.fail();
@@ -1166,8 +1283,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       onDone: lineDone,
       ...(stale ? { stale: () => stale('playhead') } : {}),
     });
-    void sei
-      .voiceTts({ characterId, text, ...ttsCtx })
+    void (pre?.route === 'clip' ? pre.started : sei.voiceTts({ characterId, text, ...ttsCtx }))
       .then((buf) => {
         if (session !== mySession) {
           slot?.fail();
@@ -1200,8 +1316,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
    * another speaker's, or the turn was superseded — is mirrored to the peers
    * immediately: the room heard it, so its transcripts must too, it just takes
    * no floor and chains nothing. */
-  function speakAndCapture(characterId: string, text: string, originSeq: number, ctx: SpokenLineContext): void {
-    speakCompanionLine(characterId, text, ctx);
+  function speakAndCapture(
+    characterId: string,
+    text: string,
+    originSeq: number,
+    ctx: SpokenLineContext,
+    prefetch?: TtsPrefetch,
+  ): void {
+    speakCompanionLine(characterId, text, ctx, prefetch);
     const current = originSeq === directorSeq;
     // Floor-steal (260708): an armed capture whose speaker has produced NOTHING
     // yet is a pending floor, not a held one. A real spoken line from someone
@@ -1243,7 +1365,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     pendingCompanionLines = [];
     for (const line of lines) {
       if (get().participants.includes(line.characterId)) {
-        speakAndCapture(line.characterId, line.text, line.seq, line.ctx);
+        speakAndCapture(line.characterId, line.text, line.seq, line.ctx, line.prefetch);
+      } else {
+        discardTtsPrefetch(line.prefetch);
       }
     }
   }
@@ -1806,6 +1930,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (s.status === 'connecting' || (s.status === 'live' && s.introHold)) {
         if (pendingCompanionLines.length < MAX_PENDING_COMPANION_LINES) {
           pendingCompanionLines.push({ characterId, text, seq: originSeq, ctx });
+          // 261128 (T571): live but held by a call scene's walk-on: its TTS
+          // can start now, so the line is ready the moment she arrives.
+          if (s.status === 'live') prefetchPendingTts();
         }
         return;
       }
@@ -1862,6 +1989,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
 
   try {
     offTtsChunk = sei.onVoiceTtsChunk?.((push) => {
+      if (ttsDiscarded.has(push.streamId)) {
+        if (push.done || push.error) ttsDiscarded.delete(push.streamId);
+        return;
+      }
       if (!ttsStreams.has(push.streamId)) {
         if (ttsOrphans.size > 32) ttsOrphans.clear();
         const list = ttsOrphans.get(push.streamId) ?? [];
@@ -1991,7 +2122,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       cutTracker.clear();
       replyClock.reset();
       pendingTts = 0;
-      pendingCompanionLines = [];
+      dropPendingCompanionLines();
       remoteEndAt = null;
       remoteDrainedAt = null;
       ttsStreams.clear();
@@ -2146,7 +2277,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // back to English rather than blocking the dial.
       // 260725: the same read feeds the STT policy (sttPolicy.ts) — whether the
       // local Whisper worker boots at all, and whether cloud Scribe is wired.
-      const callCfg = await sei.getConfig().catch(() => null);
+      // 261128 (T571): this read and the two status reads below are
+      // independent, so all three go out together and are awaited in order
+      // (one round trip to main instead of three). Each keeps its own
+      // fallback, exactly as when they ran one after another.
+      const callCfgRead = sei.getConfig().catch(() => null);
+      const elevenKeyRead = (async () => (await sei.voiceElevenKeyStatus?.())?.present === true)();
+      const speechPackRead = (async () => sei.speechPackStatus?.())();
+      // Settled below; until then a rejection is not unhandled.
+      elevenKeyRead.catch(() => {});
+      speechPackRead.catch(() => {});
+      const callCfg = await callCfgRead;
       if (session !== mySession) return;
       // 261116: the player's language (chat_language, else the UI language).
       const chatLanguage = userChatLanguage(callCfg);
@@ -2159,7 +2300,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // cost of counting it here is only whole-clip playback, dev-only.)
       let elevenKeyPresent = false;
       try {
-        elevenKeyPresent = (await sei.voiceElevenKeyStatus?.())?.present === true;
+        elevenKeyPresent = await elevenKeyRead;
       } catch {
         /* status read failed → assume absent, which only costs streaming */
       }
@@ -2191,7 +2332,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // is the model-missing rule anyway) and the app UI language.
       let sensevoiceReady = false;
       try {
-        const status = await sei.speechPackStatus?.();
+        const status = await speechPackRead;
         sensevoiceReady = status?.packs?.['stt-sensevoice']?.state === 'ready';
       } catch {
         /* absent bridge / failed read → whisper behavior */
@@ -2456,6 +2597,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         stopAmbience = startAmbience();
       }
       set({ status: 'live', connectingDetail: null, liveAt: now });
+      // 261128 (T571): the buffered opener's TTS starts NOW, so it synthesizes
+      // during the pickup beat below (or a call scene's walk-on) instead of
+      // after it. When the lines are handed to the queue they use it.
+      prefetchPendingTts();
 
       // Idle conversation starter: the quiet clock starts at connect (the
       // greeting about to play immediately resets it anyway) and ticks for the
@@ -2474,7 +2619,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       window.setTimeout(() => inactivityTick(mySession), IDLE_TICK_MS);
 
       // A one-second beat after "connected" before the companion speaks — a real
-      // pickup pause, and a head start for the greeting's TTS first byte.
+      // pickup pause. The opener's TTS was requested at connect (above), so
+      // its first audio is usually waiting by the time the beat ends.
       await wait(CONNECT_SPEAK_DELAY_MS);
       if (session !== mySession) return;
       // A call scene still walking the companion on keeps the lines buffered;
@@ -2581,7 +2727,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       speakerOriginSeq.clear();
       lastReactorId = null;
       pendingTts = 0;
-      pendingCompanionLines = [];
+      dropPendingCompanionLines();
       remoteEndAt = null;
       remoteDrainedAt = null;
       for (const t of remoteEndTimers) window.clearTimeout(t);

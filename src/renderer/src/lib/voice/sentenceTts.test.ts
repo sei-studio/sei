@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createSentenceTts } from './sentenceTts';
+import { createSentenceTts, sentenceRequests } from './sentenceTts';
 import type { AudioQueue } from './audioQueue';
 
 function deferred<T>() {
@@ -84,5 +84,37 @@ describe('sentence-sized local speech', () => {
     await f.speak({ characterId: 'c1', text: 'The value is 3.14. 你好。これは試験です！ Final tail', more: true }, f.opts);
     expect(f.slots.map((s) => s.text)).toEqual(['The value is 3.14.', '你好。', 'これは試験です！', 'Final tail']);
     expect(f.synthesize.mock.calls.every(([r]) => r.more === true)).toBe(true);
+  });
+
+  it('sentenceRequests: the exact per-sentence requests the line is synthesized as (261128, T571)', () => {
+    expect(sentenceRequests({ characterId: 'c', text: 'Hi there. How are you?', prev: 'Before.' })).toEqual([
+      { characterId: 'c', text: 'Hi there.', prev: 'Before.', more: true },
+      { characterId: 'c', text: 'How are you?', prev: 'Hi there.', more: false },
+    ]);
+    expect(sentenceRequests({ characterId: 'c', text: '   ' })).toEqual([]);
+  });
+
+  it('a prefetched first clip is used for sentence one; only the rest are synthesized', async () => {
+    const f = fixture();
+    const firstClip = new ArrayBuffer(3);
+    f.synthesize.mockResolvedValue(new ArrayBuffer(4));
+    await f.speak(
+      { characterId: 'c1', text: 'Hi there. How are you?' },
+      { ...f.opts, first: Promise.resolve(firstClip) },
+    );
+    expect(f.synthesize).toHaveBeenCalledTimes(1);
+    expect(f.synthesize.mock.calls[0][0]).toMatchObject({ text: 'How are you?', prev: 'Hi there.' });
+    expect(f.slots[0].push).toHaveBeenCalledWith(firstClip);
+    expect(f.slots[1].push).toHaveBeenCalledTimes(1);
+  });
+
+  it('a prefetched first clip that failed reports the error like a synthesis would', async () => {
+    const f = fixture();
+    const failed = Promise.reject(new Error('VOICE_PACK_MISSING'));
+    failed.catch(() => {});
+    await f.speak({ characterId: 'c1', text: 'Hi there. How are you?' }, { ...f.opts, first: failed });
+    expect(f.onError).toHaveBeenCalledTimes(1);
+    expect(f.synthesize).not.toHaveBeenCalled();
+    expect(f.onDone).toHaveBeenCalledWith(false);
   });
 });
