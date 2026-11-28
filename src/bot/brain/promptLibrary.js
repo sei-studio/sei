@@ -314,7 +314,7 @@ export const ACTION_DESCRIPTIONS = {
     'Read a sign\'s text: `{block:"oak_sign"}` for the nearest, or aim with a target/coords. Must be within reach. Read-only — changes nothing.',
 
   shelter:
-    'Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:"cobblestone", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Defaults to your current position, so when the player wants it where they are ("here", "next to me"), pass their position from the snapshot as center.',
+    'Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:"cobblestone", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Short of blocks, it digs in instead: the middle goes 3 down with a roof on top, a few seconds (a 3x3 holds one: whoever stands in the middle). Defaults to your current position, so when the player wants it where they are ("here", "next to me"), pass their position from the snapshot as center.',
 
   // Only present when the active provider supports vision (D-10). Keep it short.
   look:
@@ -360,7 +360,9 @@ export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. TELL THE 
 // lines (combat_night eval after pass 31: 7 and 15 deaths in two runs).
 // Getting the weapon back is now the first step (the snapshot's weapon: line
 // says where it lies, weaponSelect lostWeaponLine).
-export const ATTACKED_UNARMED_THEN = ` Then: you have no weapon since you died, and your swings do 1 damage, so do not stand and fight it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, keep away from the mobs and keep the player with you.`
+// 261128 (quality pass 67): only while nothing stands by it. combat_night-02-B
+// went back five times for a sword lying among the zombies that killed her.
+export const ATTACKED_UNARMED_THEN = ` Then: you have no weapon since you died, and your swings do 1 damage, so do not stand and fight it. Getting your weapon back comes first while nothing stands by it: the weapon line in your snapshot says where it lies, which mobs are by it and how to pick it up, and if you are already on your way to a clear spot, let that run. If mobs stand by it or it has despawned, keep away from the mobs and keep the player with you.`
 export const attackedMobUnarmed = () => {
   const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
   return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + ATTACKED_UNARMED_THEN
@@ -479,7 +481,7 @@ export const DEFEND_ACTION_GOES_ON = `After this kill it goes on by itself to th
 // 261031 (quality pass 33): "place a block between them and it" with an empty
 // bag gave dirt walls she did not have, and with no plan of her own she told
 // the scared player to fight for her. Getting the weapon back comes first.
-export const DEFEND_UNARMED_TEXT = `You have no weapon since you died, and your swings do 1 damage, so do not attackEntity it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, stay with {owner} and lead them away from the mobs. You are the one looking after them, so tell them what you are doing in one short line rather than asking them to fight it.`
+export const DEFEND_UNARMED_TEXT = `You have no weapon since you died, and your swings do 1 damage, so do not attackEntity it. Getting your weapon back comes first while nothing stands by it: the weapon line in your snapshot says where it lies, which mobs are by it and how to pick it up, and if you are already on your way to a clear spot, let that run. If mobs stand by it or it has despawned, stay with {owner} and lead them away from the mobs. You are the one looking after them, so tell them what you are doing in one short line rather than asking them to fight it.`
 export const DEFEND_ADDENDUM_THREAT_UNARMED = `{closing} {owner}: the nearest is {ownerDist} blocks from them and {dist} blocks from you.{hp} ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM_HELD_UNARMED = `{owner} is being hit by {label}{dist}. ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM = (label, data) => {
