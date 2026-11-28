@@ -133,7 +133,8 @@ const NS = {
   blocks: ['  #1 grass_block x776 @166,70,1 (right by you)', '  #2 stone x291 @167,69,1 (right by you)', '  #3 dirt x42 @164,61,3 (10 blocks southwest, 9 down)', '  #4 sand x84 @165,61,4 (10 blocks southwest, 9 down)', '  #5 water x722 @163,61,3 (10 blocks west, 9 down)'],
   alexAt: '173,71,1', alexDist: '5 blocks east', alexBlocks: 5, next: 'gather wood — punch nearby trees to gather logs',
 }
-const shelterProg = (have) => ({ shelter: true, stage: 'supply', have, need: 25 })
+// Same words as behaviors/shelter.js reports (pass 68 merged onto pass 67's text channel).
+const shelterProg = (have) => ({ text: `still digging up blocks to build it with, about 2s each (${have} of the 25 it needs so far). Nothing is built yet: no wall or roof is placed` })
 const NS_H = [
   { t: 0, idle: true, firstSpawn: true, uses: [say('oh hey alex'), say("first time in this world, it's night and i have a sword and zero plan"), say('classic')] },
   { t: 1, player: 'yo', uses: silent },
@@ -191,7 +192,7 @@ const CASES = {
   shelter_how: { world: NS, steps: [...NS_H, nsSet(43, 8), live({ t: 44, player: 'hows the shelter coming' })] },
   // Later, the walls going up (5 of 16 placed, no roof).
   shelter_safe: { world: NS, steps: [...NS_H, nsSet(43, 8), { t: 44, player: 'nice job', uses: [say('heh, thanks')] },
-    { t: 60, set: { inv: [['iron_sword', 1], ['bread', 4], ['dirt', 22]], progress: { shelter: true, stage: 'walls', filled: 5, cells: 16 }, ownLine: 'since last tick your own shelter changed your inventory: -5 dirt (already counted on the inventory line above)' } },
+    { t: 60, set: { inv: [['iron_sword', 1], ['bread', 4], ['dirt', 22]], progress: { text: 'placing the walls (5 of the 16 wall blocks are in place, 11 still to go, and the roof goes on after them). It is not finished and keeps nothing out yet' }, ownLine: 'since last tick your own shelter changed your inventory: -5 dirt (already counted on the inventory line above)' } },
     live({ t: 62, player: 'are we safe in there yet?' })] },
   give_thanks: { world: WS, steps: [...WS_H, ...WS_H2,
     { t: 126, set: { inv: [...WS_INV_END.slice(0, 3), ['dirt', 6], ...WS_INV_END.slice(4)], banner: '*** INVENTORY JUST CHANGED ***: +1 dirt  <- items entered or left your inventory since last tick (the player handed you something, you picked it up, or you used/dropped it). React to it: equip a new tool, eat new food, build with new blocks. If you were waiting on something you asked for, this is it arriving.' } },

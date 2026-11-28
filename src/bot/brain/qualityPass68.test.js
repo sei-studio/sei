@@ -115,3 +115,92 @@ describe('a pickup off the ground', () => {
     expect(l.describe()).not.toContain('bread')
   })
 })
+
+// 261128 (pass 68 review): 'ground' only with a sign of it. A toss we place
+// wrong (a moving player, our copy of their position a tick behind) must
+// still reach the banner, whose reasons include a hand-over.
+describe("'ground' is conservative", () => {
+  const block = (name, x, y, z) => ({ name, position: new Vec3(x, y, z) })
+  const zombie = (id, pos) => ({ id, name: 'zombie', type: 'hostile', position: pos })
+
+  it('a toss by a moving player, 1.2 off where we have them, is not ground: it gets the banner', () => {
+    const inv = []
+    const bot = itemBot(inv)
+    const c = createSnapshotComposer({ bot })
+    c.next({})
+    const t0 = Date.now() - 1
+    const bread = item(60, new Vec3(11.2, 65.32, 0), 'bread', 3)
+    bot.emit('entitySpawn', bread)
+    bot.emit('playerCollect', bot.entity, bread)
+    expect(pickupSourcesSince(bot, t0).has('bread')).toBe(false)
+    inv.push({ name: 'bread', count: 3 })
+    const snap = c.next({})
+    expect(snap).toContain('INVENTORY JUST CHANGED')
+    expect(snap).not.toContain('off the ground')
+  })
+
+  it('an item at a block center next to the player, with no block broken there, is not ground', () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    const t0 = Date.now() - 1
+    const it = item(61, new Vec3(11.5, 64.4, 0.5), 'apple', 1)
+    bot.emit('entitySpawn', it)
+    bot.emit('playerCollect', bot.entity, it)
+    expect(pickupSourcesSince(bot, t0).has('apple')).toBe(false)
+  })
+
+  it('dirt broken on her follow walk, beside the player, is ground (the block update comes after the drop)', () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    const t0 = Date.now() - 1
+    const dirt = item(62, new Vec3(10.62, 64.41, 1.38), 'dirt', 1)
+    bot.emit('entitySpawn', dirt)
+    bot.emit('blockUpdate', block('dirt', 10, 64, 1), block('air', 10, 64, 1))
+    bot.emit('playerCollect', bot.entity, dirt)
+    expect(pickupSourcesSince(bot, t0).get('dirt')).toEqual({ kind: 'ground', name: '' })
+  })
+
+  it('a block broken one cell over does not explain it', () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    const t0 = Date.now() - 1
+    const dirt = item(63, new Vec3(10.62, 64.41, 1.38), 'dirt', 1)
+    bot.emit('entitySpawn', dirt)
+    bot.emit('blockUpdate', block('dirt', 11, 64, 1), block('air', 11, 64, 1))
+    bot.emit('playerCollect', bot.entity, dirt)
+    expect(pickupSourcesSince(bot, t0).has('dirt')).toBe(false)
+  })
+
+  it('an item nobody else stood near is ground', () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    const t0 = Date.now() - 1
+    const stick = item(64, new Vec3(5.9, 64.02, 0.1), 'stick', 1)
+    bot.emit('entitySpawn', stick)
+    bot.emit('playerCollect', bot.entity, stick)
+    expect(pickupSourcesSince(bot, t0).get('stick')).toEqual({ kind: 'ground', name: '' })
+  })
+
+  it("a mob's drop is the mob's even though vanilla sends the death after the drop spawns", () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    const t0 = Date.now() - 1
+    // the zombie died 1 block from Alex, so it is not "nobody near" either
+    const flesh = item(65, new Vec3(9.3, 64.1, 0.7), 'rotten_flesh', 2)
+    bot.emit('entitySpawn', flesh)
+    bot.emit('entityDead', zombie(31, new Vec3(9.2, 64, 0.8)))
+    bot.emit('playerCollect', bot.entity, flesh)
+    expect(pickupSourcesSince(bot, t0).get('rotten_flesh')).toEqual({ kind: 'mob', name: 'zombie' })
+  })
+
+  it('a toss in the same spot as a mob death a minute ago is still the toss', () => {
+    const bot = itemBot()
+    trackItemSources(bot)
+    bot._seiRecentLosses.set(31, { name: 'zombie', died: true, at: Date.now() - 60_000, pos: { x: 10, y: 64, z: 0 } })
+    const t0 = Date.now() - 1
+    const bread = item(66, new Vec3(10.2, 65.32, 0.1), 'bread', 1)
+    bot.emit('entitySpawn', bread)
+    bot.emit('playerCollect', bot.entity, bread)
+    expect(pickupSourcesSince(bot, t0).get('bread')).toEqual({ kind: 'player', name: 'Alex' })
+  })
+})
