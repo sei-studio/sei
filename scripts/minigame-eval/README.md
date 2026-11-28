@@ -20,6 +20,7 @@ memory. Run with `env -u POSTHOG_KEY`.
 | `skill.eval.ts` | Test 2: one character plays N seeded games of each game against a fixed baseline (Fleet Battle: hunt/target with parity; Four in a Row: win/block/safe/center heuristic, or negamax with `MG_C4_BASELINE=minimax4`). No player chat. Metrics per game to `<out>/skill/<Char>.jsonl`. |
 | `teach.eval.ts` | Test 1: an LLM beginner (`lib/learner.ts`) who only sees the panel (boards as text, status, toasts) and the chat asks to be taught and plays full games. Moves validated like the panel. Transcripts to `<out>/teach/games.jsonl`, live progress in `<out>/teach/live-*.txt`. |
 | `judge.eval.ts` | `MG_JUDGE=teach`: rubric judge per teaching game + readable `.md` transcripts. `MG_JUDGE=voice`: blind voice/distinctness check over Test 2 lines. |
+| `probe-teach.eval.ts` | Cheap teaching probe (T567, companion model only, no learner): per character, scripted player moves and fixed beginner questions (the opener, "it says hit, what now?", "whose ship sank?", "what should i watch for?"), every spoken line with its phase and the chat-reply facts it was given. `MG_CHARS`, `MG_PROBE_GAMES`, `MG_PROBE_TAG`. Writes `<out>/probe/teach.jsonl`. |
 | `repro-chat-during-move.eval.ts` | Repro: the player types while the character is making its opening Four in a Row move; records the thread the chat-reply turn was sent and what it said. |
 | `aggregate.py` | Test 2 tables (mean ± sd) as markdown. |
 
