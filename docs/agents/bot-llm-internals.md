@@ -119,6 +119,28 @@ the idle tick after one ok 0/4 -> 3/4; guards (a new remark, "protect me",
 "come closer" from 22 blocks, "ok sure" to her offer) kept their reply or
 action. A shorter tail lost most of it (see the promptLibrary comment).
 
+**Shelter stage and ground pickups (261128, pass 68).** Two
+wrong_or_hallucinated sources in the 11-28 scorecard were facts missing
+from the snapshot, not prompt wording. (1) shelter() was not a progress
+action, so its in_flight line was only "shelter() started=8.5s ago" and
+she said "almost done with the walls" while it was still digging dirt. It
+now reports `{ shelter: true, stage: supply|walls|roof|door, have/need or
+filled/cells }` (its build/dig parts get a config without the hook) and
+`shelterSuffix` in `inflight.js` words it. Wording matters: "no roof yet"
+on the walls stage made her say "walls are up but no roof" at 5 of 16, so
+it gives the count still to go. (2) A pickup with no mob-death or toss sign
+fell to the INVENTORY JUST CHANGED banner ("the player handed you
+something..."), and a dirt block picked up on a follow turned her own give
+around ("you're the one who gave me the logs"). itemSources tags such
+spawns `kind: 'ground'`: a quiet "picked up off the ground" line, out of
+the hand-over ledger. A /give has no pickup, so it still hits the banner.
+`scripts/quality-eval/pass68-probe.mjs`: "hows the shelter coming" false
+progress 7/7 -> 0/8; reversed give 8/16 -> 3/16 (3/16 with no line at all;
+the rest is her "you're the one who..." comeback habit, which a "from you
+to them" ledger wording did not move, 4/16). Echoing a tease back ("lol ur
+kinda slow yourself") was 5/8 in the probe and is left alone (pass 11 is
+the last change there).
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 
