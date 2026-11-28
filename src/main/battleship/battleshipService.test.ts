@@ -126,6 +126,8 @@ const events = (name: string): Array<Record<string, unknown>> =>
 const lastUserText = (p: LlmCallParams): string => JSON.stringify(p.messages[p.messages.length - 1]);
 // The character owes its fleet while the game is in placement (no chat turns in these scripts).
 const isPlaceTurn = (_p?: LlmCallParams): boolean => state()?.status === 'preparing';
+/** The reaction hop after a sink: the tool_result carries the ask to speak (T568). */
+const isReactionHop = (p: LlmCallParams): boolean => lastUserText(p).includes('a moment you can say one short line');
 
 /** The character's fleet as a place_fleet() input: rows A, C, E, G, I from column 1. */
 const AI_FLEET = {
@@ -228,6 +230,7 @@ beforeEach(async () => {
   shots = ['J10', 'J9', 'J8', 'J7', 'J6', 'J5', 'J4', 'J3', 'J2', 'J1'];
   reply = (p) => {
     if (isPlaceTurn(p)) return { content: [toolUse('place_fleet', AI_FLEET)] };
+    if (isReactionHop(p)) return { content: [text('(silence)')] };
     // After the list: the first cell (row by row) this scripted model has not tried.
     const next =
       shots.shift() ??
