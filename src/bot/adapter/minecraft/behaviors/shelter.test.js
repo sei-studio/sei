@@ -473,3 +473,45 @@ describe('shelterAction: her own body and walls already there (261102)', () => {
     expect(res).toMatch(/^built shelter 3x3x2/)
   })
 })
+
+// 261128 (quality pass 68): the in_flight line read "shelter() started=8.5s
+// ago" and nothing else; she said "im almost done with the walls" while it
+// was still digging dirt. The shelter reports its own stage instead.
+describe('shelterAction: reports its stage (261128)', () => {
+  it('reports digging, then walls, roof and doorway, and keeps the hook from its parts', async () => {
+    const inv = []
+    let n = 0
+    inv.push({ name: 'dirt', get count() { return n } })
+    const holes = new Set()
+    const bot = makeBot({ inv })
+    const base = bot.blockAt.bind(bot)
+    bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
+    const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); n += 1; return 'dug grass_block' })
+    const seen = []
+    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, bot, { onProgress: (p) => seen.push(p) }, { digBlock: dig })
+    expect(res).toMatch(/^built shelter 3x3x2/)
+    expect(seen.every((p) => p.shelter === true)).toBe(true)
+    const supply = seen.filter((p) => p.stage === 'supply')
+    expect(supply[0]).toMatchObject({ have: 0, need: 25 })
+    expect(supply.at(-1)).toMatchObject({ have: 25, need: 25 })
+    expect(seen.find((p) => p.stage === 'walls')).toMatchObject({ filled: 0, cells: 16 })
+    expect(seen.find((p) => p.stage === 'roof')).toMatchObject({ filled: 0, cells: 9 })
+    expect(seen.at(-1)).toMatchObject({ stage: 'door' })
+    // Stage order: supply before walls before roof before door.
+    const order = [...new Set(seen.map((p) => p.stage))]
+    expect(order).toEqual(['supply', 'walls', 'roof', 'door'])
+    // The parts get a progress hook that reports in the shelter's shape.
+    const wallsCfg = buildAction.mock.calls.find((c) => c[0].hollow === true)[2]
+    seen.length = 0
+    wallsCfg.onProgress({ placed: 3, skipped: 0, total: 16, currentY: 64 })
+    expect(seen).toEqual([{ shelter: true, stage: 'walls', filled: 0, cells: 16 }])
+    expect(dig.mock.calls[0][2]?.onProgress).toBeUndefined()
+    expect(digAction.mock.calls[0][2]?.onProgress).toBeUndefined()
+  })
+
+  it('works without a progress hook', async () => {
+    const res = await shelterAction({ size: 3 }, makeBot(), {})
+    expect(res).toMatch(/^built shelter 3x3x2/)
+    expect(buildAction.mock.calls[0][2]?.onProgress).toBeUndefined()
+  })
+})

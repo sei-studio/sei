@@ -139,3 +139,14 @@ describe('adapter.eventAddendum reads the weapon state when the turn is written'
     expect(data.unarmed).toBeUndefined()
   })
 })
+
+// 261128 (quality pass 68): shelter reports its stage on the in_flight line.
+describe('progressActions', () => {
+  it('build, gather, shelter and a cuboid dig report progress', () => {
+    const { adapter } = makeAdapter()
+    for (const name of ['build', 'gather', 'shelter']) expect(adapter.progressActions(name, {})).toBe(true)
+    expect(adapter.progressActions('dig', { to: { x: 1, y: 2, z: 3 } })).toBe(true)
+    expect(adapter.progressActions('dig', { block: 'stone' })).toBe(false)
+    expect(adapter.progressActions('goTo', {})).toBe(false)
+  })
+})

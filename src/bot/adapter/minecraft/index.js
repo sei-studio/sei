@@ -280,8 +280,9 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // background tick (behaviors/follow.js), so a follow-only turn ends the
     // loop and the tool that stops it is unfollow.
     backgroundActions: { follow: 'unfollow' },
-    // build, gather, and a cuboid dig (with a `to` corner) report progress.
-    progressActions: (name, args) => name === 'build' || name === 'gather' || (name === 'dig' && !!args?.to),
+    // build, gather, shelter, and a cuboid dig (with a `to` corner) report
+    // progress.
+    progressActions: (name, args) => name === 'build' || name === 'gather' || name === 'shelter' || (name === 'dig' && !!args?.to),
     visionActions: ['look'],
     prefilterToolBatch,
     // 261019 (pass 18): attackEntity again on the fight already running
