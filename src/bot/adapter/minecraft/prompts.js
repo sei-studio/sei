@@ -106,7 +106,7 @@ function deathCauseSentence(data) {
 // sword lying a few blocks off (combat_night eval: 7 and 15 deaths in two
 // runs). Getting the weapon back is now the plan it names.
 export const DEATH_LOST_WEAPON =
-  ' That includes your {weapon}, so you have no weapon until you get it back, and your swings do 1 damage. Picking it back up is the quickest way to be armed again; keep out of fights until you have it.'
+  ' That includes your {weapon}, so you have no weapon until you get it back, and your swings do 1 damage. Picking it back up is the quickest way to be armed again once nothing stands by it (the weapon line in your snapshot says what is near it); keep out of fights until you have it.'
 // 261031 (quality pass 33): a later death while the weapon from an earlier
 // one still lies on the ground (deathTracker earlierWeapon). The death turn
 // said "nothing dropped" and she forgot it.

@@ -59,7 +59,10 @@ onboarding grass field); everyone else's backdrop is their own art.
   is regenerated or dropped. THREE layers keep a scene bug from muting a call:
   `CallScene`'s timer backs up its own `transitionend`, `CallSceneHost` drops
   the hold on error/idle/unmount, and `setIntroHold(true)` arms an
-  `INTRO_HOLD_CAP_MS` (8s) auto-release.
+  `INTRO_HOLD_CAP_MS` (8s) auto-release. Since 261128 (T571) the held lines'
+  TTS is requested as soon as the call is live (and for a line that lands
+  during the walk, as it lands), so she speaks the moment she arrives instead
+  of one synthesis later; the hold still decides WHEN the line is queued.
 - **No scene? The character's art,** full-bleed, painted `cover` and draggable
   vertically (`CallBackdrop` + the pure maths in `lib/callBackdrop.ts`). One
   `cover` rule covers both pane shapes: on a wide window a portrait is

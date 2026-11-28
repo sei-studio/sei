@@ -20,8 +20,14 @@
  *                      dialed companion's first line before the player spoke;
  *                      after a greeting_timeout connect it lands after connect_ms)
  *   connect_ms         the call went live (stopwatch start, connected chime)
- *   opener_queued_ms   the buffered opener was handed to TTS (connect plus the
- *                      pickup beat, or a call scene's walk-on)
+ *   opener_tts_ms      the opener's TTS was requested. Since 261128 (T571) a
+ *                      greeting buffered by connect is requested AT connect
+ *                      and synthesizes during the pickup beat, so this equals
+ *                      connect_ms; a line that lands later is requested when
+ *                      it is queued (equal to opener_queued_ms)
+ *   opener_queued_ms   the buffered opener was handed to the audio queue
+ *                      (connect plus the pickup beat, or a call scene's
+ *                      walk-on); before T571 its TTS request went out here
  *   first_line_ms      the companion's first clip became audible, before the
  *                      player said anything (so it is the opener)
  *
@@ -49,6 +55,7 @@ export const CALL_CONNECT_PHASES = [
   'greet_request_ms',
   'greet_ready_ms',
   'connect_ms',
+  'opener_tts_ms',
   'opener_queued_ms',
   'first_line_ms',
 ] as const;

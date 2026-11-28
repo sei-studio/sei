@@ -525,7 +525,7 @@
       },
       {
         "name": "shelter",
-        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
+        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Short of blocks, it digs in instead: the middle goes 3 down with a roof on top, a few seconds (a 3x3 holds one: whoever stands in the middle). Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -1576,7 +1576,7 @@
       },
       {
         "name": "shelter",
-        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
+        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Short of blocks, it digs in instead: the middle goes 3 down with a roof on top, a few seconds (a 3x3 holds one: whoever stands in the middle). Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -2626,7 +2626,7 @@
       },
       {
         "name": "shelter",
-        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
+        "description": "Build a simple enclosed shelter in one call — hollow walls, a roof, and a doorway you can walk through. `{size?:3-5, material?:\"cobblestone\", center?:{x,y,z}}`. Fast night/mob protection; comes out blocky. Short of blocks, it digs in instead: the middle goes 3 down with a roof on top, a few seconds (a 3x3 holds one: whoever stands in the middle). Defaults to your current position, so when the player wants it where they are (\"here\", \"next to me\"), pass their position from the snapshot as center.",
         "input_schema": {
           "type": "object",
           "properties": {

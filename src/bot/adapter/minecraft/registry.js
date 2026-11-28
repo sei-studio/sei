@@ -21,7 +21,7 @@ import { resolveEntity } from './observers/targeting.js'
 import { digToolAction } from './behaviors/digTool.js'
 import { exploreAction } from './behaviors/explore.js'
 import { buildAction } from './behaviors/build.js'
-import { shelterAction } from './behaviors/shelter.js'
+import { shelterAction, inPitShelter, PIT_EXIT_MS } from './behaviors/shelter.js'
 import { placeBlockAction } from './behaviors/place.js'
 import { equipAction } from './behaviors/equip.js'
 import { craftAction } from './behaviors/craft.js'
@@ -508,7 +508,9 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // the bot back to the owner. Incidental actions (dig/gather/build) leave
       // follow intact so the bot resumes trailing after them.
       setFollowTarget(null)
-      const timeoutMs = config?.pathfinder_timeout_ms ?? 12000
+      // 261128 (pass 67): out of a roofed pit shelter takes a roof dig and a
+      // 3-block pillar first; 12 s ran out on 4 of 6 live walks out.
+      const timeoutMs = (config?.pathfinder_timeout_ms ?? 12000) + (inPitShelter(bot) ? PIT_EXIT_MS : 0)
       if (typeof args.player === 'string' && args.player.trim()) {
         return goToPlayer(bot, args.player.trim(), Math.max(args.range, 2), timeoutMs, config?.signal)
       }

@@ -16,7 +16,7 @@ vi.mock('./digTool.js', () => ({
   digToolAction: vi.fn(async () => 'dug grass_block'),
 }))
 
-import { shelterAction, shelterBaseY } from './shelter.js'
+import { shelterAction, shelterBaseY, pitPlan, inPitShelter } from './shelter.js'
 import { buildAction } from './build.js'
 import { digAction } from './dig.js'
 import { digToolAction } from './digTool.js'
@@ -275,7 +275,9 @@ describe('shelterAction: bodies in the way (261019)', () => {
 describe('shelterAction: digs its own blocks when short (261102)', () => {
   function diggableBot(inv) {
     const holes = new Set()
-    const bot = makeBot({ inv })
+    // 261128 (pass 67): rock two blocks under the middle (no pickaxe), so
+    // it cannot dig in and digs its blocks from around the footprint.
+    const bot = makeBot({ inv, extra: { '0,61,0': 'stone' } })
     const base = bot.blockAt.bind(bot)
     bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
     return { bot, holes }
@@ -375,7 +377,9 @@ describe('shelterAction: digs its own blocks when short (261102)', () => {
 
 describe('shelterAction: pass 36 review (261102)', () => {
   function diggableBot(inv, holes = new Set()) {
-    const bot = makeBot({ inv })
+    // 261128 (pass 67): rock two blocks under the middle (no pickaxe), so
+    // it cannot dig in and digs its blocks from around the footprint.
+    const bot = makeBot({ inv, extra: { '0,61,0': 'stone' } })
     const base = bot.blockAt.bind(bot)
     bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
     return { bot, holes }
@@ -477,34 +481,35 @@ describe('shelterAction: her own body and walls already there (261102)', () => {
 // 261128 (quality pass 68): the in_flight line read "shelter() started=8.5s
 // ago" and nothing else; she said "im almost done with the walls" while it
 // was still digging dirt. The shelter reports its own stage instead.
-describe('shelterAction: reports its stage (261128)', () => {
+describe('shelterAction: reports its stage (261128, pass 68)', () => {
   it('reports digging, then walls, roof and doorway, and keeps the hook from its parts', async () => {
     const inv = []
     let n = 0
     inv.push({ name: 'dirt', get count() { return n } })
     const holes = new Set()
-    const bot = makeBot({ inv })
+    // Rock under the middle (no pickaxe), so it cannot dig in.
+    const bot = makeBot({ inv, extra: { '0,61,0': 'stone' } })
     const base = bot.blockAt.bind(bot)
     bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
     const dig = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); n += 1; return 'dug grass_block' })
     const seen = []
-    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, bot, { onProgress: (p) => seen.push(p) }, { digBlock: dig })
+    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, bot, { onProgress: (p) => seen.push(p.text) }, { digBlock: dig })
     expect(res).toMatch(/^built shelter 3x3x2/)
-    expect(seen.every((p) => p.shelter === true)).toBe(true)
-    const supply = seen.filter((p) => p.stage === 'supply')
-    expect(supply[0]).toMatchObject({ have: 0, need: 25 })
-    expect(supply.at(-1)).toMatchObject({ have: 25, need: 25 })
-    expect(seen.find((p) => p.stage === 'walls')).toMatchObject({ filled: 0, cells: 16 })
-    expect(seen.find((p) => p.stage === 'roof')).toMatchObject({ filled: 0, cells: 9 })
-    expect(seen.at(-1)).toMatchObject({ stage: 'door' })
-    // Stage order: supply before walls before roof before door.
-    const order = [...new Set(seen.map((p) => p.stage))]
-    expect(order).toEqual(['supply', 'walls', 'roof', 'door'])
-    // The parts get a progress hook that reports in the shelter's shape.
+    expect(seen[0]).toBe('still digging up blocks to build it with, about 2s each (0 of the 25 it needs so far). Nothing is built yet: no wall or roof is placed')
+    expect(seen).toContain('still digging up blocks to build it with, about 2s each (25 of the 25 it needs so far). Nothing is built yet: no wall or roof is placed')
+    expect(seen).toContain('placing the walls (0 of the 16 wall blocks are in place, 16 still to go, and the roof goes on after them). It is not finished and keeps nothing out yet')
+    expect(seen).toContain('the walls are up and it is putting on the roof (0 of 9 roof blocks in place). It is not finished yet')
+    expect(seen.at(-1)).toBe('the walls and roof are up and it is cutting the doorway')
+    // Stage order: digging before walls before roof before door.
+    const stage = (t) => (t.startsWith('still digging') ? 'supply' : t.startsWith('placing the walls') ? 'walls' : t.startsWith('the walls are up') ? 'roof' : 'door')
+    expect([...new Set(seen.map(stage))]).toEqual(['supply', 'walls', 'roof', 'door'])
+    // The parts get a progress hook that reports in the shelter's words.
     const wallsCfg = buildAction.mock.calls.find((c) => c[0].hollow === true)[2]
     seen.length = 0
     wallsCfg.onProgress({ placed: 3, skipped: 0, total: 16, currentY: 64 })
-    expect(seen).toEqual([{ shelter: true, stage: 'walls', filled: 0, cells: 16 }])
+    expect(seen).toEqual(['placing the walls (0 of the 16 wall blocks are in place, 16 still to go, and the roof goes on after them). It is not finished and keeps nothing out yet'])
+    // Its digs (supply, doorway) never see the hook ("broke 0 of 2" would
+    // replace the stage on the line).
     expect(dig.mock.calls[0][2]?.onProgress).toBeUndefined()
     expect(digAction.mock.calls[0][2]?.onProgress).toBeUndefined()
   })
@@ -513,5 +518,152 @@ describe('shelterAction: reports its stage (261128)', () => {
     const res = await shelterAction({ size: 3 }, makeBot(), {})
     expect(res).toMatch(/^built shelter 3x3x2/)
     expect(buildAction.mock.calls[0][2]?.onProgress).toBeUndefined()
+  })
+})
+
+describe('shelterAction: digs in when short of blocks (261128, pass 67)', () => {
+  // Flat grass; a dug cell turns to air, and whoever stands on it drops into it.
+  function pitWorld({ inv = [], extra = {}, me = { x: 0.5, z: 0.5 }, alex = null } = {}) {
+    const holes = new Set()
+    const bot = makeBot({ inv, extra })
+    bot.entity.position = { x: me.x, y: 64, z: me.z }
+    bot.entity.onGround = true
+    if (alex) bot.entities = { 7: { id: 7, type: 'player', username: 'Alex', position: { x: alex.x, y: 64, z: alex.z } } }
+    const base = bot.blockAt.bind(bot)
+    bot.blockAt = (p) => (holes.has(`${p.x},${p.y},${p.z}`) ? { name: 'air', boundingBox: 'empty', position: p } : base(p))
+    let dirt = 0
+    inv.push({ name: 'dirt', get count() { return dirt } })
+    const bodies = () => [bot.entity, ...Object.values(bot.entities ?? {})]
+    const digPit = vi.fn(async ({ x, y, z }) => {
+      holes.add(`${x},${y},${z}`)
+      let caught = false
+      for (const e of bodies()) {
+        const p = e.position
+        if (Math.floor(p.x) === x && Math.floor(p.z) === z && Math.round(p.y) === y + 1) {
+          e.position = { ...p, y }
+          if (e === bot.entity) caught = true
+        }
+      }
+      if (caught) dirt++
+      return 'dug grass_block'
+    })
+    const digBlock = vi.fn(async ({ x, y, z }) => { holes.add(`${x},${y},${z}`); dirt++; return 'dug grass_block; 1 dirt reached your inventory' })
+    return { bot, holes, digPit, digBlock, dirt: () => dirt }
+  }
+
+  it('digs the middle 3 down under her and puts the top block back as the roof', async () => {
+    const w = pitWorld()
+    const res = await shelterAction({ size: 3 }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock })
+    expect(w.digPit.mock.calls.map(([a]) => a.y)).toEqual([63, 62, 61])
+    for (const [a, , cfg] of w.digPit.mock.calls) { expect(a.x).toBe(0); expect(a.z).toBe(0); expect(cfg.noDropWalk).toBe(true) }
+    expect(w.digBlock).not.toHaveBeenCalled()
+    expect(buildAction).toHaveBeenCalledTimes(1)
+    const [roofArgs] = buildAction.mock.calls[0]
+    expect(roofArgs.from).toEqual({ x: 0, y: 63, z: 0 })
+    expect(roofArgs.to).toEqual({ x: 0, y: 63, z: 0 })
+    expect(roofArgs.block).toBe('dirt')
+    expect(digAction).not.toHaveBeenCalled() // no doorway
+    expect(res).toMatch(/^dug in: a 3x3 pit shelter, 3 blocks down at 0,61,0/)
+    expect(res).toContain('Inside: you,')
+  })
+
+  it('digs in the player the model centered it on, roof blocks first, and stays on top', async () => {
+    const w = pitWorld({ me: { x: 2.5, z: 0.5 }, alex: { x: 0.5, z: 0.5 } })
+    const walk = vi.fn(async () => 'reached')
+    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock, goTo: walk })
+    expect(walk).not.toHaveBeenCalled()
+    expect(w.digBlock).toHaveBeenCalledTimes(2) // 1 for the roof + 1 spare
+    expect(w.digBlock.mock.invocationCallOrder[0]).toBeLessThan(w.digPit.mock.invocationCallOrder[0])
+    expect(w.digPit).toHaveBeenCalledTimes(3)
+    expect(res).toContain('Inside: Alex,')
+    expect(res).toContain('You are outside, on top of it.')
+  })
+
+  it('waits for her to drop out of the roof cell before roofing (live 261128)', async () => {
+    const w = pitWorld()
+    let n = 0
+    // The last dig leaves her mid-fall, head still in the roof cell, and
+    // onGround still true from before the dig (as mineflayer reports it for
+    // a tick); she lands 300 ms later.
+    const digPit = vi.fn(async (a, b, c) => {
+      const r = await w.digPit(a, b, c)
+      if (++n === 3) {
+        w.bot.entity.position = { ...w.bot.entity.position, y: 61.6 }
+        setTimeout(() => { w.bot.entity.position = { ...w.bot.entity.position, y: 61 } }, 300)
+      }
+      return r
+    })
+    let yAtRoof = null
+    buildAction.mockImplementationOnce(async (args, bot) => { yAtRoof = bot.entity.position.y; return 'built 1 placed, 0 skipped (already solid), of 1 cells' })
+    const res = await shelterAction({ size: 3 }, w.bot, {}, { digPit, digBlock: w.digBlock })
+    expect(yAtRoof).toBe(61)
+    expect(res).toMatch(/^dug in:/)
+  })
+
+  it('marks the pit so a walk out of it gets the longer budget', async () => {
+    const w = pitWorld()
+    expect(inPitShelter(w.bot)).toBe(false)
+    await shelterAction({ size: 3 }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock })
+    w.holes.delete('0,63,0') // the roof the (mocked) build put back
+    expect(inPitShelter(w.bot)).toBe(true)
+    w.holes.add('0,63,0') // she dug the roof to climb out
+    expect(inPitShelter(w.bot)).toBe(false)
+    w.holes.delete('0,63,0')
+    w.bot.entity.position = { x: 5.5, y: 64, z: 0.5 } // walked off
+    expect(inPitShelter(w.bot)).toBe(false)
+  })
+
+  it('goes on from a pit an earlier call left half dug', async () => {
+    const w = pitWorld()
+    const ctl = new AbortController()
+    let n = 0
+    const digPit = vi.fn(async (a, b, c) => { const r = await w.digPit(a, b, c); if (++n === 2) ctl.abort(); return r })
+    const first = await shelterAction({ size: 3 }, w.bot, { signal: ctl.signal }, { digPit, digBlock: w.digBlock })
+    expect(first).toMatch(/^shelter stopped while digging in, dug 2 of 3 blocks of the pit/)
+    expect(buildAction).not.toHaveBeenCalled()
+    const second = await shelterAction({ size: 3 }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock })
+    expect(w.digPit.mock.calls.slice(2).map(([a]) => a.y)).toEqual([61])
+    expect(second).toMatch(/^dug in:/)
+  })
+
+  it('puts no roof on a pit nobody is in', async () => {
+    const w = pitWorld({ me: { x: 2.5, z: 0.5 }, alex: { x: 0.5, z: 0.5 } })
+    // Alex walks off while she digs.
+    const digPit = vi.fn(async (a, b, c) => { w.bot.entities[7].position = { x: 5.5, y: 64, z: 5.5 }; return w.digPit(a, b, c) })
+    const res = await shelterAction({ size: 3, center: { x: 0, y: 64, z: 0 } }, w.bot, {}, { digPit, digBlock: w.digBlock })
+    expect(buildAction).not.toHaveBeenCalled()
+    expect(res).toMatch(/^no roof put on: the pit at 0,61,0 is dug 3 deep, but nobody is in it now/)
+  })
+
+  it('builds walls the old way where the ground cannot take a pit (water beside it)', async () => {
+    const w = pitWorld({ extra: {} })
+    const base = w.bot.blockAt
+    w.bot.blockAt = (p) => (p.x === 1 && p.y === 62 && p.z === 0 ? { name: 'water', boundingBox: 'empty', position: p } : base(p))
+    await shelterAction({ size: 3 }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock })
+    expect(w.digPit).not.toHaveBeenCalled()
+    expect(w.digBlock).toHaveBeenCalledTimes(27)
+  })
+
+  it('pitPlan: rock needs a pickaxe, a cave under the floor rules it out', () => {
+    const g = { baseY: 64, minX: -1, maxX: 1, minZ: -1, maxZ: 1 }
+    expect(pitPlan(makeBot({ inv: [], extra: { '0,61,0': 'stone' } }), g)).toBeNull()
+    expect(pitPlan(makeBot({ inv: [{ name: 'stone_pickaxe', count: 1 }], extra: { '0,61,0': 'stone' } }), g)?.cells).toHaveLength(3)
+    const cave = makeBot({ inv: [] })
+    const base = cave.blockAt.bind(cave)
+    cave.blockAt = (p) => (p.x === 0 && p.y === 60 && p.z === 0 ? { name: 'cave_air', boundingBox: 'empty', position: p } : base(p))
+    expect(pitPlan(cave, g)).toBeNull()
+  })
+
+  it('reports where it is on the in_flight line', async () => {
+    const w = pitWorld()
+    const seen = []
+    await shelterAction({ size: 3 }, w.bot, { onProgress: (p) => seen.push(p.text) }, { digPit: w.digPit, digBlock: w.digBlock })
+    // 261128 (pass 68): the pit says how deep it is, never walls going up.
+    expect(seen[0]).toBe('digging the pit (0 of 3 deep so far, 0 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen).toContain('digging the pit (1 of 3 deep so far, 1 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen).toContain('digging the pit (3 of 3 deep so far, 3 of 3 blocks dug). The ground around it will be its walls, nothing is placed and there is no roof on it yet')
+    expect(seen.at(-1)).toBe('the pit is dug 3 deep and it is putting the roof on. It is not closed yet')
+    expect(seen.some((t) => /wall blocks|walls are up/.test(t))).toBe(false)
+    expect(w.digPit.mock.calls.every(([, , cfg]) => cfg.onProgress === undefined)).toBe(true)
   })
 })

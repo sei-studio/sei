@@ -484,14 +484,16 @@ reply_latency starts at the first utterance, so nothing timed the dial. The
 dialed companion's `voice_call_ended` now carries, as integer ms from the
 Call press (`startCall`'s dialStart), each absent when the call never got
 there: `connect_mic_permission_ms`, `connect_setup_reads_ms` (config,
-ElevenLabs key status, speech pack status), `connect_mic_open_ms`
+ElevenLabs key status, speech pack status; since T571 the three go out
+together), `connect_mic_open_ms`
 (getUserMedia; the ring starts here), `connect_stt_ready_ms` (local model
 when the policy boots one, plus the capture graph), `connect_greet_request_ms`
 (main's wall-clock stamp of the greeting's LLM request, app greetings only,
 via `SpokenLineContext.replyTiming` on the first greeting line),
 `connect_greet_ready_ms` (the dialed companion's first line reached the
 renderer before the player spoke), **`connect_ms`** (live: stopwatch,
-connected chime), `connect_opener_queued_ms` (opener handed to TTS) and
+connected chime), `connect_opener_tts_ms` (the opener's TTS request, see
+below), `connect_opener_queued_ms` (opener handed to the audio queue) and
 **`first_line_ms`** (first audible clip, only if the player had not spoken and
 no idle nudge had gone out, so it is the opener). Enums: `connect_gate`
 (`ring|setup|greeting|greeting_timeout`: what the connect waited on last),
@@ -504,11 +506,21 @@ call main closed (quit, account switch) and a group joiner have none, and a
 dial abandoned before connect sends no `voice_call_ended` at all. The DevTools
 console prints one `[sei/voice] call_connect ...` line when the opener is
 heard. Fixed waits to read the numbers against: the ring floor
-(`MIN_RING_MS`, 1300) and the pickup beat (`CONNECT_SPEAK_DELAY_MS`, 1000)
-before the opener's TTS request, and the greeting cap (5000). Wiring is pinned
+(`MIN_RING_MS`, 1300), the pickup beat (`CONNECT_SPEAK_DELAY_MS`, 1000)
+before the opener is handed to the queue, and the greeting cap (5000).
+Since 261128 (T571) a greeting buffered by connect has its TTS requested AT
+connect (`prefetchPendingTts` in useVoiceStore), so it synthesizes during the
+beat and `opener_tts_ms` equals `connect_ms`; `first_line_ms - connect_ms`
+is then 1000 whenever the first audio arrives inside the beat, and only
+TTS slower than the beat shows up past it. A line that lands after connect
+(greeting_timeout) is requested when queued, so its `opener_tts_ms` equals
+`opener_queued_ms`. Before T571 the request went out after the beat, and the
+whole TTS time to first audio sat on top of it. Wiring is pinned
 by `useVoiceStore.connectTiming.test.ts` (real startCall, stubbed mic/audio,
 fake clocks); the greeting's client share by the second case of
-`voiceLatency.harness.test.ts` (p50 8 ms to the LLM request, 4 ms after it).
+`voiceLatency.harness.test.ts` (p50 8 ms to the LLM request, 4 ms after it);
+the early opener TTS by `useVoiceStore.openerPrefetch.test.ts` (stubbed TTS,
+order, hang-up and leave during the beat, failure, scene walk-on, Kokoro).
 
 **Every event carries `ui_language` (260801).** `commonProps()` in
 `src/main/analytics.ts` stamps the APP UI language (not the per-character

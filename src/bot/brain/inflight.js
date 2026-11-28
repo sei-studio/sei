@@ -125,10 +125,12 @@ export function getInFlightLineForSnapshot(entry, now = Date.now(), opts = {}) {
   let suffix = ''
   const p = entry.progress
   const gatherLine = p ? heldGatherSuffix(p, opts?.inventory) : null
-  if (p && p.shelter === true) {
-    suffix = shelterSuffix(p)
-  } else if (gatherLine) {
+  if (gatherLine) {
     suffix = gatherLine
+  } else if (p && typeof p.text === 'string' && p.text) {
+    // 261128 (pass 67): an action that says where it is in its own words
+    // (shelter: digging for blocks, digging the pit, walls, roof, doorway).
+    suffix = ` — ${p.text}`
   } else if (p && typeof p.total === 'number') {
     const completed = (typeof p.placed === 'number') ? p.placed
                     : (typeof p.dug === 'number') ? p.dug
@@ -165,27 +167,6 @@ export function getInFlightLineForSnapshot(entry, now = Date.now(), opts = {}) {
     suffix = `${walking}, so stopping it keeps them with you. They are meant for ${to}, so do not count them toward anything of yours`
   }
   return `in_flight: ${entry.name}(${argblurb}) started=${elapsed}s ago${suffix}`
-}
-
-// 261128 (quality pass 68): the stage a running shelter() is at. With only
-// "shelter() started=8.5s ago" to go on she told the player "im almost done
-// with the walls" and "shelter's almost up, you're safe in here" while it was
-// still digging dirt (11-28 scorecard night_social-02). Payload from
-// behaviors/shelter.js: { shelter: true, stage, have/need | filled/cells }.
-function shelterSuffix(p) {
-  const n = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : null)
-  if (p.stage === 'supply' && n(p.have) != null && n(p.need) != null) {
-    return `, still digging up blocks to build it with (${n(p.have)} of the ${n(p.need)} it needs so far). Nothing is built yet: no wall or roof is placed`
-  }
-  if (p.stage === 'walls' && n(p.filled) != null && n(p.cells) != null) {
-    const left = Math.max(0, n(p.cells) - n(p.filled))
-    return `, placing the walls (${n(p.filled)} of the ${n(p.cells)} wall blocks are in place, ${left} still to go, and the roof goes on after them). It is not finished and keeps nothing out yet`
-  }
-  if (p.stage === 'roof' && n(p.filled) != null && n(p.cells) != null) {
-    return `, the walls are up and it is putting on the roof (${n(p.filled)} of ${n(p.cells)} roof blocks in place). It is not finished yet`
-  }
-  if (p.stage === 'door') return ', the walls and roof are up and it is cutting the doorway'
-  return ''
 }
 
 // Gather progress from what is in the inventory right now. Returns null when
