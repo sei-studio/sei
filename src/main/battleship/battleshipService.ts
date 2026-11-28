@@ -1075,8 +1075,8 @@ async function contractBlock(s: Session): Promise<string> {
       'A quiet shot is the normal case, so leave say out unless you have something to say. The board shows ' +
       'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
       'talk through your analysis. Your say goes out before anyone knows where the shot lands, so never claim a ' +
-      'hit, a miss or a sink in it. Do not open with "ok", "okay" or "alright", and do not repeat a line you already ' +
-      'said this game.',
+      'hit, a miss or a sink in it. The screen shows how many ships each side has left, so do not count them in a ' +
+      'say. Do not open with "ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
     `${TEACHING_LEAD} Start with the rules in a few plain words: both sides hid five ships, 5, 4, 3, 3 and 2 cells ` +
       'long, in straight lines; you take turns firing one shot at a cell on the other board; a shot is a hit or a ' +
@@ -1087,7 +1087,9 @@ async function contractBlock(s: Session): Promise<string> {
       'at least two cells long. While they are learning, the say of your shot can be one of these tips about their ' +
       'last shot instead of table talk.',
     `Write only your own lines, never lines for ${playerName}, and no bracketed stage directions. ` +
-      `Lines starting with "(game)" come from the app, never from them, and in them ${me} is you. ` +
+      `Lines starting with "(game)" come from the app, never from them, and in them ${me} is you: when ` +
+      `${playerName} sinks ${me}'s cruiser, you say "my cruiser", and ${playerName}'s ships are "your" ships when ` +
+      `you talk to ${playerName}. ` +
       'The app tells you whose turn it is.',
     'Save something with remember() only if it is about them as a person, not the game itself.',
   ].join('\n\n');
@@ -1420,15 +1422,18 @@ function gameOverBlock(s: Session, r: BATTLESHIPResult, player: string): string 
   const theirsSunk = s.playerGrid.ships.filter((sh) => sh.sunk).length;
   const mineAfloat = s.aiGrid.ships.filter((sh) => !sh.sunk).length;
   const Player = player.charAt(0).toUpperCase() + player.slice(1);
+  const me = s.names.me;
+  // In the names, then in the words to say: "You won and Ren lost" was read
+  // out as "you won. i sank all five of yours" to the player who lost (T567).
   const result =
     r.reason === 'all-ships-sunk'
       ? r.winner === 'ai'
-        ? `You won and ${player} lost. You sank all five of ${player}'s ships while ${mineAfloat} of yours were ` +
-          `still afloat. You are the winner, talking to the person you just beat.`
-        : `${Player} won and you lost. ${Player} sank all five of your ships; you had sunk ${theirsSunk} of theirs. ` +
-          `You are the one who lost, talking to the person who beat you.`
+        ? `${me} (you) won and ${player} lost: you sank all five of ${player}'s ships while ${mineAfloat} of yours ` +
+          `were still afloat. Said to ${player}, that is "I won" and "you lost", never "you won".`
+        : `${Player} won and ${me} (you) lost: ${player} sank all five of your ships; you had sunk ${theirsSunk} of ` +
+          `theirs. Said to ${player}, that is "you won" and "I lost".`
       : r.reason === 'resign'
-        ? `You won: ${player} gave up. You are the winner, talking to the person who gave up.`
+        ? `${me} (you) won: ${player} gave up. Said to ${player}, that is "I won", never "you won".`
         : 'The game ended without a winner.';
   return [
     `The game is over. ${result} That is settled; the app checked it.`,
