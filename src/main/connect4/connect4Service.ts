@@ -1224,8 +1224,15 @@ function turnBlock(
   }
   const last = s.history[s.history.length - 1];
   if (last) {
-    const who = kind === 'chat-reply' ? (last.color === ai ? M : P) : last.color === ai ? 'you' : 'they';
-    lines.push(`Last move: ${who} dropped in column ${last.column + 1}. Pieces played: ${s.moves} of 42.`);
+    const where = `column ${last.column + 1}, ${last.row === ROWS - 1 ? 'on the bottom row' : `row ${ROWS - last.row} from the bottom`}`;
+    if (kind === 'move' && last.color !== ai) {
+      // Said the way she says it (T568): with "Last move: they dropped in
+      // column 6" her lines made up the shape ("a little wall on the left").
+      lines.push(`Their last move, the way you say it to ${P}: your last piece went into ${where}. Pieces played: ${s.moves} of 42.`);
+    } else {
+      const who = kind === 'chat-reply' ? (last.color === ai ? M : P) : last.color === ai ? 'you' : 'they';
+      lines.push(`Last move: ${who} dropped in ${where}. Pieces played: ${s.moves} of 42.`);
+    }
   }
   if (kind === 'move') {
     const open = legalColumns(s).map((c) => c + 1);
@@ -1237,7 +1244,7 @@ function turnBlock(
     if (s.talkedLastMove) {
       lines.push('You talked with your last move, so leave say out this time.');
     }
-    lines.push('Work it out in plain text if you need to, then call play() with your column, and say only if you have something to say.');
+    lines.push('Work it out in plain text if you need to, then call play() with your column. A say, if any, is about the moves before this one or a tip, never this move.');
   } else if (kind === 'chat-reply') {
     // Whose turn, as a fact: Haiku 5.5 said "my move: i'm stacking up column
     // 4" while it was the player's move (261128 eval).
