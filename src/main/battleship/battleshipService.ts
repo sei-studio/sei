@@ -1415,11 +1415,10 @@ function turnBlock(
     );
     lines.push(gridText(s.playerGrid, false));
     const theirShips = s.playerGrid.ships.filter((sh) => sh.sunk).map((sh) => sh.name);
-    lines.push(`Their ships you sank: ${theirShips.join(', ') || 'none yet'}.`);
     lines.push(
       showOwnShips
-        ? `Your own board ("S" your ship, "o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`
-        : `Your own board, where they shoot ("o" their miss, "X" their hit, "#" your sunk ship). Your ships ${shipsLine(s.aiGrid)}.`,
+        ? `Your own board ("S" your ship, "o" their miss, "X" their hit, "#" your sunk ship).`
+        : `Your own board, where they shoot ("o" their miss, "X" their hit, "#" your sunk ship).`,
     );
     lines.push(gridText(s.aiGrid, showOwnShips));
     // The last shots in the words it says them to the player in (T568): the
@@ -1453,10 +1452,15 @@ function turnBlock(
             : 'my last shot missed your ships',
       );
     }
-    if (said.length) {
-      const P = s.names.player;
-      lines.push(`The last shots, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you): ${said.join('; ')}.`);
-    }
+    // The fleets too (T568): with "Your ships afloat: ...; sunk: destroyer"
+    // under its own board, 2 of 5 characters told the player who had just
+    // sunk their destroyer "your destroyer went down" (probe v8).
+    const P = s.names.player;
+    lines.push(
+      `Written the way you say it to ${P} ("you" is ${P}, "I" and "my" are you): ` +
+        (said.length ? `${said.join('; ')}. ` : '') +
+        `My ships ${shipsLine(s.aiGrid)}. Your ships sunk: ${theirShips.join(', ') || 'none yet'}.`,
+    );
   }
 
   if (kind === 'place') {
