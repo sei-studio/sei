@@ -27,8 +27,18 @@
  *     (SAY_PROPERTY), the same split as the bot's say() (260616): real games
  *     with Haiku 5.5 had it work the board out in plain text ("Board check:
  *     red has col 4 rows 1 and 3...") and every word of that reached the
- *     player as table talk. The `say` of the call that landed is buffered
- *     and lands with the move; a rejected call's `say` is dropped.
+ *     player as table talk. A rejected call's `say` is dropped.
+ *   - say before the move, reaction after it (T568). The `say` of a legal
+ *     call is said BEFORE the move lands (ToolOutcome.apply), so it is about
+ *     what already happened: written in the same call as the shot, it could
+ *     not know the result, and lines like "i hit one!" or "three across now"
+ *     sat next to results that said otherwise. When the result is a moment
+ *     worth a word (Fleet Battle: her shot sank a ship; Four in a Row: after
+ *     her piece someone can make four right now) the game sends the result
+ *     as checked facts with the tool_result and the model gets one more hop,
+ *     its plain text said out loud. Only on those moves, so the extra call
+ *     is bounded (at most 5 a Fleet Battle game; the threat moves of a Four
+ *     in a Row game), not one per turn.
  *
  * The runner never decides a move. A tool call the game rejects goes back to
  * the model as an error tool_result so it can correct itself; a turn that
@@ -79,6 +89,16 @@ export interface ToolOutcome {
   moved?: boolean;
   /** Count this call as an illegal move attempt. */
   illegal?: boolean;
+  /**
+   * Move turns: a legal move the game has NOT put on the board yet. The
+   * runner says the call's `say` first and only then calls this, so the line
+   * is said before the result shows and never sits next to a result it could
+   * not know (T568). Returns the tool_result note and, when the result is a
+   * moment worth a word, `reaction`: the result in checked facts plus the ask,
+   * sent with the note, and the model gets ONE more hop whose plain text is
+   * said out loud. Null = the game moved on before the move could land.
+   */
+  apply?: () => { note: string; reaction?: string } | null;
 }
 
 export interface BoardToolUse {
@@ -147,10 +167,13 @@ export interface BoardTurnResult {
 export const SAY_PROPERTY = {
   type: 'string',
   description:
-    'Optional. One short line you say out loud at the table with this move, in your own voice. ' +
-    'Leave it out on most moves. Never put a cell name, a column number or your plan in it ' +
-    '(the board shows the move), and do not start it with "ok".',
+    'Optional. One short line you say out loud, in your own voice, just BEFORE your move lands, so it can only be ' +
+    'about what already happened (their last move, the game so far) or a tip. Leave it out on most moves. Never put ' +
+    'a cell name, a column number or your plan in it (the board shows the move), and do not start it with "ok".',
 } as const;
+
+/** Most tokens the reaction hop may write: one short spoken line. */
+const REACTION_MAX_TOKENS = 200;
 
 /**
  * The result an attempt reports when its move was already applied by an
@@ -262,8 +285,19 @@ export function chatReplyRule(longerHelp: boolean = LONGER_HELP_REPLIES): string
  */
 export const TEACHING_LEAD =
   'If they are new to the game or ask you to teach them, teach them as you play. You know this game and how ' +
-  'to play it well, whatever your persona is like, so state the rules and tips plainly and correctly, in your ' +
-  'own voice, and never tell them you do not know the game yourself.';
+  'to play it well, whatever your persona is like, so the rules and tips you give are plain and correct, and ' +
+  'you never tell them you do not know the game yourself. How you say them is all yours: your words, your ' +
+  'attitude, your habits, the way you would explain anything to them. A longer explanation is still you ' +
+  'talking, never a manual.';
+
+/**
+ * Chat-reply facts outrank the player (T568). A beginner said "C7 is a miss"
+ * about a cell nobody had fired at; Lyra agreed ("C7 is out") against her own
+ * facts list and the player lost the ship for 31 shots.
+ */
+export const FACTS_WIN =
+  'They are new and can misremember the board; these facts are always right. When something they say does not ' +
+  'match them, do not go along with it: tell them, kindly and in your own way, what really happened.';
 
 /**
  * The last line of a chat-reply turn block. Lyra, given the teaching
@@ -351,10 +385,14 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
   deadline.catch(() => { /* observed through the race below */ });
   const stale = (): boolean => a.isStale() || (ctrl.signal.aborted && !timedOut);
 
-  const deferSpeech = a.kind === 'move' || a.kind === 'place';
+  // Move/place turns: plain text is the model's private scratch space; only
+  // the move tool's `say` (and the reaction hop, below) is said.
+  const privateText = a.kind === 'move' || a.kind === 'place';
   const maxParts = a.kind === 'chat-reply' ? 3 : 2;
-  const buffered: ChatMessage[] = [];
   const spoken: ChatMessage[] = [];
+  // Parts said by the current speaker (the move's say, then the reaction:
+  // each gets its own budget).
+  let partsNow = 0;
   const persist = async (msg: ChatMessage): Promise<void> => {
     await chatStore.appendMessage(a.characterId, msg);
     a.pushChatMessage(a.characterId, msg);
@@ -363,20 +401,20 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
   const speak = async (text: string): Promise<void> => {
     for (const part of splitReply(text, punctuation)) {
       if (!part || isSilenceFiller(part)) continue;
-      if (buffered.length + spoken.length >= maxParts) continue;
-      const msg: ChatMessage = {
+      if (partsNow >= maxParts) continue;
+      partsNow++;
+      await persist({
         id: randomUUID(),
         role: 'companion',
         text: part,
-        ts: Date.now() + buffered.length + spoken.length,
+        ts: Math.max(Date.now(), (spoken[spoken.length - 1]?.ts ?? 0) + 1),
         ...(a.voiceCall ? { voice: true } : {}),
-      };
-      if (deferSpeech) buffered.push(msg);
-      else await persist(msg);
+      });
     }
   };
 
   let moved = false;
+  let reaction: string | null = null;
   let hops = 0;
   let illegal = 0;
   let noToolHops = 0;
@@ -417,7 +455,7 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
         .trim();
       if (text) {
         // Move/place turns: plain text is the model's scratch space, never said.
-        if (deferSpeech) console.log(`[sei/${a.surface}] scratch (private): ${text.replace(/\s+/g, ' ').slice(0, 160)}`);
+        if (privateText) console.log(`[sei/${a.surface}] scratch (private): ${text.replace(/\s+/g, ' ').slice(0, 160)}`);
         else await speak(text);
       }
 
@@ -448,10 +486,25 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
         } else {
           out = await a.onTool({ id: tu.id, name: tu.name, input: tu.input });
           if (out.moved) {
-            moved = true;
-            // The line said with the move (buffered: it lands with the move).
+            // The line said with a legal move goes out BEFORE the move lands
+            // (out.apply), so it can never claim a result it did not know.
             const say = (tu.input as { say?: unknown } | null)?.say;
-            if (typeof say === 'string' && say.trim()) await speak(say.trim());
+            if (typeof say === 'string' && say.trim()) {
+              // A line that fails to land (a chat-store write) never costs the move.
+              await speak(say.trim()).catch((err) => {
+                console.warn(`[sei/${a.surface}] move line not said: ${(err as Error)?.message ?? err}`);
+              });
+            }
+            if (out.apply) {
+              const applied = stale() ? null : out.apply();
+              if (!applied) {
+                out = { note: 'The game has moved on; this does nothing now.', isError: true };
+              } else {
+                out = { ...out, note: applied.reaction ? `${applied.note}\n\n${applied.reaction}` : applied.note };
+                reaction = applied.reaction ?? null;
+              }
+            }
+            moved = !out.isError;
           }
           if (out.illegal) {
             illegal++;
@@ -476,20 +529,49 @@ export async function runBoardTurn(a: BoardTurnArgs): Promise<BoardTurnResult> {
       }
     }
 
+    // The reaction hop (T568): the move landed on a moment worth a word (a
+    // sink, a chance to make four), and the model now sees the result as
+    // checked facts in the tool_result. One call, only on those moves; its
+    // plain text is said out loud, and nothing it calls does anything.
+    if (moved && reaction && !stale()) {
+      hops++;
+      const res = await Promise.race([
+        llm.call({
+          maxTokens: REACTION_MAX_TOKENS,
+          system,
+          tools: a.tools as never,
+          stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+          messages,
+          timeoutMs: CHAT_TIMEOUT_MS,
+          signal: ctrl.signal,
+        }),
+        deadline,
+      ]).catch((err) => {
+        // The move already landed: a failed reaction only loses the line.
+        if (err instanceof BoardTurnTimeout) timedOut = true;
+        console.warn(`[sei/${a.surface}] reaction hop failed: ${(err as Error)?.message ?? err}`);
+        return null;
+      });
+      if (res && !stale()) {
+        const u = res.usage;
+        console.log(
+          `[sei/${a.surface}] turn char=${a.characterId.slice(0, 8)} kind=${a.kind} reaction ` +
+            `in=${u?.input_tokens ?? '?'} out=${u?.output_tokens ?? '?'} cacheRead=${u?.cache_read_input_tokens ?? 0}`,
+        );
+        const line = res.content
+          .filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n')
+          .trim();
+        partsNow = 0;
+        if (line) await speak(line);
+      }
+    }
+
     if (a.isStale()) {
       const e = new Error(CHAT_ABORTED);
       e.name = 'AbortError';
       throw e;
-    }
-
-    // Buffered move talk lands with the move, never without it.
-    if (moved) {
-      for (const msg of buffered) {
-        msg.ts = Math.max(msg.ts, Date.now());
-        await persist(msg);
-      }
-    } else if (buffered.length) {
-      console.log(`[sei/${a.surface}] dropped ${buffered.length} line(s) from a turn that made no move`);
     }
     return { moved, spoken, hops, illegal, noToolHops, lastRejection };
   } catch (err) {

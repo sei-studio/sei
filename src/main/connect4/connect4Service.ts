@@ -60,6 +60,7 @@ import {
   chatReplyRule,
   TEACHING_LEAD,
   SPOKEN_NOW,
+  FACTS_WIN,
   unansweredNote,
   type BoardToolUse,
   type BoardTurnKind,
@@ -564,17 +565,83 @@ async function onMoveTool(s: Session, tu: BoardToolUse, token: number, seq: numb
       illegal: true,
     };
   }
-  applyMove(s, col, row, aiColorOf(s), 'ai');
-  s.appliedToken = token;
-  noteFirstMove(s, 'ai');
-  // The piece shows at once, but the turn stays the character's until the
-  // runner returns (its table talk lands first): flipping it here made the
-  // runner's own stale check fire, dropping the talk and the move count.
-  push(s);
+  const config = await loadConfig();
+  const player = (config.preferred_name ?? '').trim() || 'the player';
+  const me = (await getCharacter(s.characterId))?.name || 'you';
   return {
-    note: `You drop your piece in column ${column}. It is on the board now; do not call play() again this turn.`,
+    note: '',
     moved: true,
+    // Put on the board only after the move's say went out (boardTurn.ts).
+    apply: () => {
+      if (!moveTurnLive(s, token, seq) || dropRow(s.board, col) !== row) return null;
+      applyMove(s, col, row, aiColorOf(s), 'ai');
+      s.appliedToken = token;
+      noteFirstMove(s, 'ai');
+      // The piece shows at once, but the turn stays the character's until the
+      // runner returns (a reaction line lands first): flipping it here made
+      // the runner's own stale check fire, dropping the talk and the move count.
+      push(s);
+      return {
+        note: `You drop your piece in column ${column}. It is on the board now; do not call play() again this turn.`,
+        reaction: resultAfter(s) ? undefined : (reactionText(s.board, { ai: aiColorOf(s), player, me }) ?? undefined),
+      };
+    },
   };
+}
+
+/** Columns where `color` makes four with its next piece (playable now). */
+export function winningColumns(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  color: CONNECT4Color,
+): number[] {
+  const out: number[] = [];
+  for (let c = 0; c < COLS; c++) {
+    const r = dropRow(board, c);
+    if (r === -1) continue;
+    const next = board.map((row) => row.slice());
+    next[r][c] = color;
+    if (isWinningPiece(next, r, c)) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * The reaction moment after the character's piece lands (T568): when either
+ * side can make four with its next piece, the model is shown that as checked
+ * facts and may say one line about it. Null = a quiet position, no extra
+ * call. Written after its move is made, so it never helps choose that move;
+ * the next move turn does not carry it (the thread is the chat and the move
+ * log, not this turn's tool results). In round-1 full games the learners
+ * missed winning and must-block squares and the characters rarely pointed
+ * them out, and a say written before the piece landed misread the board
+ * ("three across the bottom now" with two).
+ */
+export function reactionText(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  sides: Connect4Sides,
+): string | null {
+  const playerColor: CONNECT4Color = sides.ai === 'r' ? 'y' : 'r';
+  const theirs = winningColumns(board, playerColor);
+  const mine = winningColumns(board, sides.ai);
+  if (theirs.length === 0 && mine.length === 0) return null;
+  const P = sides.player;
+  const cols = (cs: number[]): string => cs.map((c) => `column ${c + 1}`).join(' or ');
+  const facts: string[] = [];
+  if (mine.length) {
+    facts.push(
+      `- I (${colorName(sides.ai)}) can make four next move in ${cols(mine)}, so you have to block ${mine.length > 1 ? 'one of those' : 'it'} now${mine.length > 1 ? ', and you can only block one' : ''}.`,
+    );
+  }
+  if (theirs.length) facts.push(`- You (${colorName(playerColor)}) can make four right now in ${cols(theirs)}.`);
+  return [
+    `Your piece is on the board and it is ${P}'s move. Facts the app checked about the board now, written the way ` +
+      `you say them to ${P} ("you" is ${P}, "I" and "my" are you):`,
+    ...facts,
+    'This is a moment you can say one short line about, in your own voice. When they are learning, showing them the ' +
+      'spot that wins or the one they must block is the most useful tip there is; whether you warn them is your ' +
+      'choice. Do not repeat what you said with your move. Everything you write now is said out loud exactly as ' +
+      'written, so write only the words you say, or nothing at all.',
+  ].join('\n');
 }
 
 async function dispatchChat(s: Session): Promise<void> {
@@ -921,7 +988,7 @@ export function connect4ChatFacts(
   const P = sides.player;
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ` +
-      `${sides.me}). Anything you say about the board has to match them:`,
+      `${sides.me}). Anything you say about the board has to match them. ${FACTS_WIN}`,
     linesText(board, sides),
     fourChancesText(board, sides),
     `${P} plays ${colorName(sides.ai === 'r' ? 'y' : 'r')}, so a tip for ${P} never says to block a ` +
@@ -1040,8 +1107,10 @@ async function contractBlock(s: Session): Promise<string> {
       'does not need to be tidy. Keep it short. Anything you want to say out loud goes in the say field of play().',
     'Table talk: talk like yourself. React to their move, gloat, worry, needle them. One short line, the length of ' +
       'a text message. Most moves deserve none, so leave say out unless you have something to say. Never say which ' +
-      'column you are playing or talk through your analysis: the board shows your move by itself. Your say goes out ' +
-      'as your piece drops, so never claim in it what your own piece blocks or sets up. Do not open with ' +
+      'column you are playing or talk through your analysis: the board shows your move by itself. Your say is said ' +
+      'just before your piece drops, so it is about their last move or the game so far, never about what your ' +
+      'own piece blocks or sets up. When your piece leaves someone a chance to make four, the app shows you that ' +
+      'after it lands and gives you a moment to say something then. Do not open with ' +
       '"ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
     `${TEACHING_LEAD} Start with the rules in a few plain words: you take turns dropping one piece into a column, ` +

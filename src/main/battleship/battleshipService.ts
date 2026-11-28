@@ -73,6 +73,7 @@ import {
   chatReplyRule,
   TEACHING_LEAD,
   SPOKEN_NOW,
+  FACTS_WIN,
   unansweredNote,
   type BoardToolUse,
   type BoardTurnArgs,
@@ -715,19 +716,54 @@ async function onFireTool(s: Session, tu: BoardToolUse, live: () => boolean): Pr
     };
   }
   if (!live()) return { note: 'It is not your turn any more; this does nothing.', isError: true };
-  const shot = applyShot(s, 'ai', cell.row, cell.col);
-  s.appliedToken = s.moveToken; // live() held: this is the turn's token
-  noteFirstMove(s, 'ai');
-  // The shot shows at once; the turn passes only after the runner returns
-  // (its table talk lands first), see dispatchAiTurn.
-  push(s);
-  const name = battleshipCellName(cell.row, cell.col);
-  const note = shot.sunkShip
-    ? `${name}: hit, and you sank their ${shot.sunkShip}.${allShipsSunk(s.playerGrid) ? ' That was their last ship.' : ''}`
-    : shot.hit
-      ? `${name}: hit.`
-      : `${name}: miss.`;
-  return { note: `${note} Your shot is done for this turn.`, moved: true };
+  return {
+    note: '',
+    moved: true,
+    // Fired only after the shot's say went out (boardTurn.ts): the say was
+    // written before the result, so it is said before the result shows.
+    apply: () => {
+      if (!live() || fired(s.playerGrid.cells[cell.row][cell.col])) return null;
+      const shot = applyShot(s, 'ai', cell.row, cell.col);
+      s.appliedToken = s.moveToken; // live() held: this is the turn's token
+      noteFirstMove(s, 'ai');
+      // The shot shows at once; the turn passes only after the runner returns
+      // (a reaction line lands first), see dispatchAiTurn.
+      push(s);
+      const name = battleshipCellName(cell.row, cell.col);
+      const last = allShipsSunk(s.playerGrid);
+      const note = shot.sunkShip
+        ? `${name}: hit, and you sank their ${shot.sunkShip}.${last ? ' That was their last ship.' : ''}`
+        : shot.hit
+          ? `${name}: hit.`
+          : `${name}: miss.`;
+      return {
+        note: `${note} Your shot is done for this turn.`,
+        // The last ship ends the game, and the game-over turn speaks then.
+        reaction: shot.sunkShip && !last ? sinkReactionText(s, shot.sunkShip) : undefined,
+      };
+    },
+  };
+}
+
+/**
+ * The reaction moment after its shot sinks a ship (T568): the sink in the
+ * speaking frame, both fleets counted by the app, and one line it may say.
+ * At most four a game (the fifth ends it). Before, the line was written with
+ * the shot, before the result, and the characters claimed hits that missed
+ * or reacted to the last shot next to this one's result ("a hit, and i have
+ * to keep looking" landing on a miss).
+ */
+export function sinkReactionText(s: Pick<Session, 'names' | 'playerGrid' | 'aiGrid'>, ship: string): string {
+  const P = s.names.player;
+  const theirs = s.playerGrid.ships.filter((sh) => !sh.sunk).length;
+  const mine = s.aiGrid.ships.filter((sh) => !sh.sunk).length;
+  return [
+    `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you): I just ` +
+      `sank your ${ship}. You have ${theirs} of 5 ships afloat; I have ${mine} of 5 afloat. Their shot is next.`,
+    'This is a moment you can say one short line about, in your own voice. Do not repeat what you said with your ' +
+      'shot, and never say where your own ships are. Everything you write now is said out loud exactly as ' +
+      'written, so write only the words you say, or nothing at all.',
+  ].join('\n');
 }
 
 /** place_fleet input to placements, or a plain reason it cannot be read. */
@@ -1071,12 +1107,15 @@ async function contractBlock(s: Session): Promise<string> {
       'board, nobody sees it, and it does not need to be tidy. Keep it short. Anything you want to say out loud goes ' +
       'in the say field of fire() or place_fleet().',
     'Table talk: talk like yourself. Groan, gloat, needle them. One short line, the length of a text message. ' +
-      'Talk when something happens: you hit or sink a ship, they hit or sink one of yours, the end is close. ' +
+      'Talk when something happens: they hit or sink one of yours, your last shot hit, the end is close. ' +
       'A quiet shot is the normal case, so leave say out unless you have something to say. The board shows ' +
       'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
-      'talk through your analysis. Your say goes out before anyone knows where the shot lands, so never claim a ' +
-      'hit, a miss or a sink in it. The screen shows how many ships each side has left, so do not count them in a ' +
-      'say. Do not open with "ok", "okay" or "alright", and do not repeat a line you already said this game.',
+      'talk through your analysis. Your say is said just before your shot lands, so it is about what already ' +
+      'happened, never a guess at this shot: no hit, miss or sink for it. When your shot sinks one of their ships, ' +
+      'the app tells you after it lands and gives you a moment to say something then. The screen shows how many ' +
+      'ships each side has left, so do not count them in a say. Say "your ships" for theirs and "my ships" for ' +
+      'yours; "my side", "our", "we" or "row A is mine" leave them guessing whose board you mean. Do not open ' +
+      'with "ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
     `${TEACHING_LEAD} Start with the rules in a few plain words: both sides hid five ships, 5, 4, 3, 3 and 2 cells ` +
       'long, in straight lines; you take turns firing one shot at a cell on the other board; a shot is a hit or a ' +
@@ -1157,6 +1196,23 @@ export function openHitsText(grid: BATTLESHIPGrid): string {
     : 'Your open hits: none (no ship you hit is still afloat).';
 }
 
+/** The cells next to a grid's open hits ("hit", ship afloat) not fired at yet, in row order. */
+export function openHitNeighbours(grid: BATTLESHIPGrid): string[] {
+  const out = new Set<string>();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid.cells[r][c] !== 'hit') continue;
+      for (const [nr, nc] of [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]]) {
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !fired(grid.cells[nr][nc])) out.add(`${nr},${nc}`);
+      }
+    }
+  }
+  return [...out]
+    .map((k) => k.split(',').map(Number) as [number, number])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .map(([r, c]) => battleshipCellName(r, c));
+}
+
 /**
  * Move turns: where it may not shoot again, as a list (the shorter side:
  * the cells fired at, or past half the board the cells still open). Haiku
@@ -1209,6 +1265,8 @@ export function chatFactsText(f: {
   turn: 'player' | 'ai';
   /** The player's hits on its board whose ship is still afloat. */
   theirOpenHits: ReadonlyArray<string>;
+  /** The cells next to those hits the player has not fired at. */
+  theirOpenNext?: ReadonlyArray<string>;
 }): string {
   const P = f.player;
   const M = f.me;
@@ -1225,7 +1283,7 @@ export function chatFactsText(f: {
   const theirs = sunk(f.theirShips);
   return [
     `Facts the app checked, written the way you say them to ${P} ("you" is ${P}, "I" and "my" are you, ${M}). ` +
-      'Anything you say about the game has to match them:',
+      `Anything you say about the game has to match them. ${FACTS_WIN}`,
     `- You sank: ${mine.length ? mine.map((n) => `my ${n}`).join(', ') : 'none of my ships yet'}.`,
     `- I sank: ${theirs.length ? theirs.map((n) => `your ${n}`).join(', ') : 'none of your ships yet'}.`,
     `- Your last shots at my ships, newest first: ${last('player', 'my', true)}.`,
@@ -1233,7 +1291,9 @@ export function chatFactsText(f: {
     // toward its own hits on the player's board (probes v2 to v7).
     `- My last shots at your ships, newest first: ${last('ai', 'your', false)}.`,
     `- Your hits on my ships that are still afloat: ${f.theirOpenHits.join(', ') || 'none'}` +
-      (f.theirOpenHits.length ? ' (which ship it is stays hidden until it sinks).' : '.'),
+      (f.theirOpenHits.length
+        ? ` (which ship it is stays hidden until it sinks). Next to them, not fired at yet: ${(f.theirOpenNext ?? []).join(', ') || 'none'}.`
+        : '.'),
     `- Cells you already fired at: ${playerFired || 'none yet'}.`,
     `- Next shot: ${f.turn === 'ai' ? 'mine' : 'yours'}.`,
     `Only tip ${P} toward ${P}'s own hits on your ships that are still afloat; with none, there is no cell to tip.`,
@@ -1358,6 +1418,13 @@ function turnBlock(
       const what = lastTheirs.sunkShip ? `hit and sank your ${lastTheirs.sunkShip}` : lastTheirs.hit ? 'hit' : 'miss';
       lines.push(`Their last shot: ${battleshipCellName(lastTheirs.row, lastTheirs.col)}, ${what}.`);
     }
+    // Its own last result, said plainly: with only the grid it reacted to the
+    // wrong shot (T568).
+    const lastMine = [...s.history].reverse().find((h) => h.by === 'ai');
+    if (lastMine && kind === 'move') {
+      const what = lastMine.sunkShip ? `hit and sank their ${lastMine.sunkShip}` : lastMine.hit ? 'hit' : 'miss';
+      lines.push(`Your last shot: ${battleshipCellName(lastMine.row, lastMine.col)}, ${what}.`);
+    }
   }
 
   if (kind === 'place') {
@@ -1394,6 +1461,7 @@ function turnBlock(
           history: s.history,
           turn: s.turn,
           theirOpenHits: cellsWhere(s.aiGrid, (c) => c === 'hit'),
+          theirOpenNext: openHitNeighbours(s.aiGrid),
         }),
       );
     }

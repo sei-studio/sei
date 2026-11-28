@@ -342,7 +342,7 @@ describe('Four in a Row turns', () => {
     expect(popupSpy).toHaveBeenCalledWith(expect.anything(), 'connect4');
   });
 
-  it('a turn that throws after its move landed never moves a second time', async () => {
+  it('a move line that fails to land never costs the move or makes a second one', async () => {
     let failOnce = true;
     initCONNECT4Service({
       pushState: (st) => pushed.push(st),
@@ -356,6 +356,28 @@ describe('Four in a Row turns', () => {
       isSummoned: () => false,
     });
     reply = () => ({ content: [toolUse('play', { column: 3, say: 'There.' })] });
+    await startCONNECT4(CHAR, { playerColor: 'r' });
+    await playerMove(CHAR, 0);
+    await waitFor(() => state().turn === 'r' && !state().aiThinking);
+    expect(aiPieces(state())).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(state().aiTurnFailed).toBeNull();
+  });
+
+  it('a push that throws once the piece is down never moves a second time', async () => {
+    let failOnce = true;
+    initCONNECT4Service({
+      pushState: (st) => {
+        if (failOnce && st.history.some((h) => h.color === 'y')) {
+          failOnce = false;
+          throw new Error('window gone');
+        }
+        pushed.push(st);
+      },
+      pushChatMessage: (_id, m) => chatPushed.push(m),
+      isSummoned: () => false,
+    });
+    reply = () => ({ content: [toolUse('play', { column: 3 })] });
     await startCONNECT4(CHAR, { playerColor: 'r' });
     await playerMove(CHAR, 0);
     await waitFor(() => state().turn === 'r' && !state().aiThinking);
