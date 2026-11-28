@@ -73,11 +73,29 @@ describe(`teach: ${CHAR}`, () => {
       try { appendFileSync(liveFile, `${new Date(e.ts).toISOString().slice(11, 19)} ${e.who}: ${e.text}\n`); } catch { /* progress only */ }
     };
     const track = (e: Ev) => { events.push(e); live(e); };
+    const game = (text: string) => track({ ts: Date.now(), who: 'game', text });
     const pushChatMessage = (characterId: string, msg: ChatMessage) => {
       if (characterId === currentId && msg.role === 'companion') track({ ts: msg.ts ?? Date.now(), who: 'companion', text: msg.text });
     };
-    initBATTLESHIPService({ pushState: () => {}, pushChatMessage, isSummoned: () => false });
-    initCONNECT4Service({ pushState: () => {}, pushChatMessage, isSummoned: () => false });
+    // The companion's moves are logged when the app pushes them (T568), so
+    // the timeline has its lines and its moves in the order the player sees
+    // them. Before, its move was logged only once the player's turn came,
+    // after the line said with it, and the judge read every such line as
+    // said before the move.
+    let seenAi = 0;
+    let c4PlayerColor: 'r' | 'y' = 'r';
+    const bsPush = (st: { characterId?: string; history: Array<{ by: string; hit: boolean; sunkShip: string | null }> }) => {
+      const ai = st.history.filter((h) => h.by === 'ai');
+      for (const h of ai.slice(seenAi)) game(h.sunkShip ? `${name} sank your ${h.sunkShip}` : h.hit ? `${name} hit your fleet` : `${name} missed`);
+      seenAi = Math.max(seenAi, ai.length);
+    };
+    const c4Push = (st: { history: Array<{ color: string; column: number }> }) => {
+      const ai = st.history.filter((h) => h.color !== c4PlayerColor);
+      for (const h of ai.slice(seenAi)) game(`${name}'s disc dropped into column ${h.column + 1}.`);
+      seenAi = Math.max(seenAi, ai.length);
+    };
+    initBATTLESHIPService({ pushState: (st) => { if (st.characterId === currentId) bsPush(st); }, pushChatMessage, isSummoned: () => false });
+    initCONNECT4Service({ pushState: (st) => { if (st.characterId === currentId) c4Push(st); }, pushChatMessage, isSummoned: () => false });
     __setBattleshipTestHooks({ provider });
     __setConnect4TestHooks({ provider });
     const name = String(row.name);
@@ -90,11 +108,11 @@ describe(`teach: ${CHAR}`, () => {
       const keep = lines.length > 90 ? [...lines.slice(0, 20).filter((l) => !l.startsWith('[screen]')), '…', ...lines.slice(-60)] : lines;
       return keep.join('\n');
     };
-    const game = (text: string) => track({ ts: Date.now(), who: 'game', text });
 
     for (const { game: kind, k } of GAMES) {
       const id = registerGameCharacter(gl, row);
       currentId = id;
+      seenAi = 0;
       events = [];
       liveFile = outPath('teach', `live-${kind}-${k}.txt`);
       mkdirSync(path.dirname(liveFile), { recursive: true });
@@ -217,10 +235,6 @@ describe(`teach: ${CHAR}`, () => {
             return x.status === 'ended' || x.aiTurnFailed || (x.turn === 'player' && !x.aiThinking) ? x : null;
           }, TURN_WAIT_MS);
           if (!done) { stuck = true; break; }
-          const ai = [...done.history].reverse().find((h) => h.by === 'ai');
-          if (ai && done.history.length > res.state.history.length) {
-            game(ai.sunkShip ? `${name} sank your ${ai.sunkShip}` : ai.hit ? `${name} hit your fleet` : `${name} missed`);
-          }
         }
         await meter.idle(1500, 90_000);
         const fin = getBATTLESHIPState(id)!;
@@ -277,6 +291,7 @@ describe(`teach: ${CHAR}`, () => {
       } else {
         // ── Four in a Row ───────────────────────────────────────────────
         const playerColor = k % 2 === 1 ? 'r' : 'y';
+        c4PlayerColor = playerColor;
         const colorName = playerColor === 'r' ? 'red' : 'yellow';
         await startCONNECT4(id, { playerColor });
         game(`Four in a Row with ${name}. You picked ${colorName} (red moves first).`);
@@ -301,7 +316,6 @@ describe(`teach: ${CHAR}`, () => {
             continue;
           }
           const nowLen = s.history.length;
-          for (const h of s.history.slice(lastLen)) if (h.color !== playerColor) game(`${name}'s disc dropped into column ${h.column + 1}.`);
           lastLen = nowLen;
           let chatted = false;
           let problem = '';
@@ -352,7 +366,6 @@ describe(`teach: ${CHAR}`, () => {
         }
         await meter.idle(1500, 90_000);
         const fin = getCONNECT4State(id)!;
-        for (const h of fin.history.slice(lastLen)) if (h.color !== playerColor) game(`${name}'s disc dropped into column ${h.column + 1}.`);
         if (fin.status === 'ended') game(fin.result?.winner === playerColor ? 'You won. Four in a row.' : fin.result?.winner ? `${name} won. Four in a row.` : 'Draw. The board is full.');
         const ended = gl.captures.find((c) => c.event === 'connect4_game_ended')?.props ?? {};
         if (fin.status !== 'ended') await endCONNECT4(id);
