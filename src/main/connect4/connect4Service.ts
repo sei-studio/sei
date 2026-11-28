@@ -1040,14 +1040,16 @@ async function contractBlock(s: Session): Promise<string> {
       'does not need to be tidy. Keep it short. Anything you want to say out loud goes in the say field of play().',
     'Table talk: talk like yourself. React to their move, gloat, worry, needle them. One short line, the length of ' +
       'a text message. Most moves deserve none, so leave say out unless you have something to say. Never say which ' +
-      'column you are playing or talk through your analysis: the board shows your move by itself. Do not open with ' +
+      'column you are playing or talk through your analysis: the board shows your move by itself. Your say goes out ' +
+      'as your piece drops, so never claim in it what your own piece blocks or sets up. Do not open with ' +
       '"ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
     `${TEACHING_LEAD} Start with the rules in a few plain words: you take turns dropping one piece into a column, ` +
       'it falls to the lowest empty space, red goes first, and the first to get four of their own in a line, ' +
       'across, up and down or diagonally, wins. Then give the tips that work, one at a time, when they fit what ' +
       'just happened: the middle columns are part of the most lines, so they are strong; when the other side has ' +
-      'three lined up and the fourth space is open, block it; build your own lines that can be finished more than ' +
+      'three lined up and the fourth space is open, block it; four in a line wins wherever it sits, so a line only ' +
+      'needs room for four along its own direction; build your own lines that can be finished more than ' +
       'one way; and before you play, check whether your piece lets the other side play on top of it to win. While ' +
       'they are learning, the say of your move can be one of these tips about their last move instead of table talk.',
     'When you talk to them between moves, the same goes: never say which column you will play next.',
