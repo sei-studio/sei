@@ -280,6 +280,8 @@ export const PIT_DEPTH = 3
 const LOOSE_DIG = new Set(['sand', 'red_sand', 'gravel', 'clay', 'dirt_path', 'farmland', 'snow_block'])
 const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/
 const GROUND_WAIT_MS = 800
+const GROUND_TICK_MS = 100
+const SETTLE_MS = 2000
 
 function isAirName(n) { return /^(air|cave_air|void_air)$/.test(n) }
 
@@ -339,9 +341,37 @@ function whoInside(bot, minX, maxX, minZ, maxZ, baseY) {
   return { me, players, mobs }
 }
 
+/**
+ * True while she stands in a roofed pit shelter this session dug (under its
+ * roof, roof still on). Getting out means digging the roof and pillaring up
+ * 3 blocks, which a live run (261128) measured at 10-15 s of pathfinding, so
+ * goTo gives such a walk PIT_EXIT_MS more than its usual budget.
+ */
+export function inPitShelter(bot) {
+  const pit = bot?._seiPit
+  const p = bot?.entity?.position
+  if (!pit || !p) return false
+  const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z)
+  if (x < pit.minX || x > pit.maxX || z < pit.minZ || z > pit.maxZ || y >= pit.roofY) return false
+  return isOccupied(bot, { x, y: pit.roofY, z })
+}
+export const PIT_EXIT_MS = 15000
+
 async function waitOnGround(bot, signal) {
+  // onGround stays true for a physics tick after the block under her goes,
+  // so let two ticks pass before trusting it.
+  await sleep(GROUND_TICK_MS)
   const end = Date.now() + GROUND_WAIT_MS
   while (bot.entity && bot.entity.onGround === false && Date.now() < end && !signal?.aborted) await sleep(50)
+}
+
+// Until nobody is in a roof cell any more (whoever was on the ground there
+// is still falling down the shaft), or SETTLE_MS. Live run 261128: the 1x1
+// roof went on while she was still dropping through it and failed with "had
+// you standing in them".
+async function waitClearOf(bot, cells, signal) {
+  const end = Date.now() + SETTLE_MS
+  while (cells.some(c => bodyInCell(bot, c)) && Date.now() < end && !signal?.aborted) await sleep(50)
 }
 
 /**
@@ -429,6 +459,7 @@ async function pitShelter(bot, config, deps, g) {
     return `no roof put on: the pit at ${where} is dug ${PIT_DEPTH} deep but you have no blocks left for its roof (${roofNeed} needed). Pick up the dug blocks or dig one more, then call shelter again.`
   }
   report('digging in: the pit is dug, putting the roof on')
+  await waitClearOf(bot, innerColumns(minX, maxX, minZ, maxZ).map(({ x, z }) => ({ x, y: plan.roofY, z })), signal)
   const roof = await buildPart(bot, { ...config, onProgress: undefined }, { from: roofFrom, to: roofTo }, material, false)
   if (isAborted(roof.res)) return `shelter stopped while roofing the pit at ${where}, it is not closed yet (roof: ${roof.res})`
   const closed = buildComplete(roof.res)
@@ -440,6 +471,7 @@ async function pitShelter(bot, config, deps, g) {
   if (!closed) {
     return `shelter UNFINISHED: dug a pit ${PIT_DEPTH} deep at ${where} (${whoText} in it), but the roof has gaps and it is not safe yet (roof: ${roof.res}${extra})`
   }
+  bot._seiPit = { minX: minX + 1, maxX: maxX - 1, minZ: minZ + 1, maxZ: maxZ - 1, roofY: plan.roofY }
   const room = size === 3 ? ' It is 1x1 inside, room for one.' : ''
   return `dug in: a ${size}x${size} pit shelter, ${PIT_DEPTH} blocks down at ${where} with the ground as its walls and a roof of ${roof.used.join(' and ') || material} (${roof.res}${extra}). Inside: ${whoText}, out of reach of mobs.${outside}${room} It has no door: any walk (follow, goTo) digs out of it again.`
 }

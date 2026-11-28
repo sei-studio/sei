@@ -16,7 +16,7 @@ vi.mock('./digTool.js', () => ({
   digToolAction: vi.fn(async () => 'dug grass_block'),
 }))
 
-import { shelterAction, shelterBaseY, pitPlan } from './shelter.js'
+import { shelterAction, shelterBaseY, pitPlan, inPitShelter } from './shelter.js'
 import { buildAction } from './build.js'
 import { digAction } from './dig.js'
 import { digToolAction } from './digTool.js'
@@ -534,6 +534,40 @@ describe('shelterAction: digs in when short of blocks (261128, pass 67)', () => 
     expect(w.digPit).toHaveBeenCalledTimes(3)
     expect(res).toContain('Inside: Alex,')
     expect(res).toContain('You are outside, on top of it.')
+  })
+
+  it('waits for her to drop out of the roof cell before roofing (live 261128)', async () => {
+    const w = pitWorld()
+    let n = 0
+    // The last dig leaves her mid-fall, head still in the roof cell, and
+    // onGround still true from before the dig (as mineflayer reports it for
+    // a tick); she lands 300 ms later.
+    const digPit = vi.fn(async (a, b, c) => {
+      const r = await w.digPit(a, b, c)
+      if (++n === 3) {
+        w.bot.entity.position = { ...w.bot.entity.position, y: 61.6 }
+        setTimeout(() => { w.bot.entity.position = { ...w.bot.entity.position, y: 61 } }, 300)
+      }
+      return r
+    })
+    let yAtRoof = null
+    buildAction.mockImplementationOnce(async (args, bot) => { yAtRoof = bot.entity.position.y; return 'built 1 placed, 0 skipped (already solid), of 1 cells' })
+    const res = await shelterAction({ size: 3 }, w.bot, {}, { digPit, digBlock: w.digBlock })
+    expect(yAtRoof).toBe(61)
+    expect(res).toMatch(/^dug in:/)
+  })
+
+  it('marks the pit so a walk out of it gets the longer budget', async () => {
+    const w = pitWorld()
+    expect(inPitShelter(w.bot)).toBe(false)
+    await shelterAction({ size: 3 }, w.bot, {}, { digPit: w.digPit, digBlock: w.digBlock })
+    w.holes.delete('0,63,0') // the roof the (mocked) build put back
+    expect(inPitShelter(w.bot)).toBe(true)
+    w.holes.add('0,63,0') // she dug the roof to climb out
+    expect(inPitShelter(w.bot)).toBe(false)
+    w.holes.delete('0,63,0')
+    w.bot.entity.position = { x: 5.5, y: 64, z: 0.5 } // walked off
+    expect(inPitShelter(w.bot)).toBe(false)
   })
 
   it('goes on from a pit an earlier call left half dug', async () => {

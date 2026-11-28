@@ -13,8 +13,9 @@
 // Cases (arena: grass at y=70 over stone, she stands at y=71):
 //   dirt_empty    dirt at y=68..69 under a 7x7 around her, empty bag
 //   stone_pick    plain arena (stone under the grass), a wooden pickaxe
-//   stone_nopick  plain arena, empty bag: no pit possible, the old path
-//                 (control: must not claim a shelter)
+//   stone_nopick  plain arena, empty bag: no pit possible (stone under the
+//                 grass, no pickaxe), so the old path runs (control: no
+//                 "dug in"; with no mobs it builds walls from grass dirt)
 //
 // pit = the result says "dug in", her feet end at y=68 and the cell above
 // her head (y=70) is solid. out = after goTo Alex she stands at y>=71 within
@@ -49,7 +50,7 @@ async function shelterAndCheck(ctx, { wantPit }) {
   const result = String(r.result)
   const pit = /^dug in/.test(result) && by === Y - 3 && roof === 1
   const row = { result: result.slice(0, 400), ms, pos: pr?.pos, roof, pit }
-  if (!wantPit) return { ...row, success: !/^dug in|^built/.test(result) }
+  if (!wantPit) return { ...row, success: !/^dug in/.test(result) }
   // Out again: Alex stands 4 blocks off on the surface.
   await cmds([tp(PLAYER, P, S)])
   await sleep(1000)
