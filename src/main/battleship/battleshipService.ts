@@ -1107,14 +1107,15 @@ async function contractBlock(s: Session): Promise<string> {
       'board, nobody sees it, and it does not need to be tidy. Keep it short. Anything you want to say out loud goes ' +
       'in the say field of fire() or place_fleet().',
     'Table talk: talk like yourself. Groan, gloat, needle them. One short line, the length of a text message. ' +
-      'Talk when something happens: they hit or sink one of yours, your last shot hit, the end is close. ' +
+      'Talk when something happens: their shot hit or sank one of yours, or your last shot hit. ' +
       'A quiet shot is the normal case, so leave say out unless you have something to say. The board shows ' +
       'your shot by itself, so never name the cell you are shooting at, never say where your ships are, and never ' +
       'talk through your analysis. Your say is said just before your shot lands, so it is about what already ' +
       'happened, never a guess at this shot: no hit, miss or sink for it. When your shot sinks one of their ships, ' +
       'the app tells you after it lands and gives you a moment to say something then. The screen shows how many ' +
-      'ships each side has left, so do not count them in a say. Say "your ships" for theirs and "my ships" for ' +
-      'yours; "my side", "our", "we" or "row A is mine" leave them guessing whose board you mean. Do not open ' +
+      'ships each side has left, so do not count them in a say. To their face they are "you", never "they"; say ' +
+      '"your ships" for theirs and "my ships" for yours; "my side", "our", "we" or "row A is mine" leave them ' +
+      'guessing whose board you mean. Do not open ' +
       'with "ok", "okay" or "alright", and do not repeat a line you already said this game.',
     chatReplyRule(),
     `${TEACHING_LEAD} Start with the rules in a few plain words: both sides hid five ships, 5, 4, 3, 3 and 2 cells ` +
@@ -1465,7 +1466,9 @@ function turnBlock(
       lines.push(`Your recent lines: ${s.recentLines.map((l) => `"${l}"`).join(' / ')}. Do not say these again or anything close to them.`);
     }
     if (s.talkedLastMove) {
-      lines.push('You said something with your last shot, so this one can go by without a word unless their shot really calls for one.');
+      // Firm (T568): with "unless their shot really calls for one" it
+      // talked on 3 of 4 shots and most wrong claims were in those lines.
+      lines.push('You talked with your last shot, so leave say out this time.');
     }
     lines.push('Work it out in plain text if you need to, then call fire() with one cell you have not fired at, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {

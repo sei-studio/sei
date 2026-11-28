@@ -1235,7 +1235,7 @@ function turnBlock(
       lines.push(`Your recent lines: ${s.recentLines.map((l) => `"${l}"`).join(' / ')}. Do not say these again or anything close to them.`);
     }
     if (s.talkedLastMove) {
-      lines.push('You said something with your last move, so this one can go by without a word unless their move really calls for one.');
+      lines.push('You talked with your last move, so leave say out this time.');
     }
     lines.push('Work it out in plain text if you need to, then call play() with your column, and say only if you have something to say.');
   } else if (kind === 'chat-reply') {
